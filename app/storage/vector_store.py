@@ -1,8 +1,12 @@
 import json
 import os
+from pathlib import Path
 
-CHUNKS_DIR = "data/embeddings/chunks"   # one JSON file per document
-FILES_PATH = "data/embeddings/files.json"
+# Resolve paths relative to this file's location (app/storage/vector_store.py)
+# so they work regardless of which directory the server is launched from.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # → rag-system/
+CHUNKS_DIR = str(_PROJECT_ROOT / "data" / "embeddings" / "chunks")
+FILES_PATH = str(_PROJECT_ROOT / "data" / "embeddings" / "files.json")
 
 
 class VectorStore:
@@ -55,7 +59,10 @@ class VectorStore:
         if not os.path.exists(path):
             return {}
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            content = f.read().strip()
+            if not content:
+                return {}
+            return json.loads(content)
 
     def _save_json(self, path: str, data: dict | list) -> None:
         """

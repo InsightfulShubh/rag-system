@@ -160,3 +160,31 @@ class RetrievalService:
         # Sort all chunks from both files together by descending score
         all_scored_chunks.sort(key=lambda x: x["score"], reverse=True)
         return all_scored_chunks[:top_k]
+
+    def search(self, query: str) -> dict:
+        """
+        Retrieval-only pipeline: embed → Stage 1 → Stage 2.
+        Does NOT call the LLM. Used by search_kb() tool.
+
+        Args:
+            query: the search query string
+
+        Returns:
+            dict with keys:
+                - context (str): formatted chunk texts joined together
+                - sources (list[str]): source file names
+        """
+        query_embedding = get_embedding(query)
+        top_files = self._get_top_files(query_embedding, top_k=2)
+
+        if not top_files:
+            return {"context": "", "sources": []}
+
+        top_chunks = self._get_top_chunks(query_embedding, top_files, top_k=5)
+
+        # Format chunks into a single context string for the LLM
+        context = "\n\n".join(
+            f"[Source: {c['file_name']}]\n{c['text']}" for c in top_chunks
+        )
+        sources = list(dict.fromkeys(c["file_name"] for c in top_chunks))
+        return {"context": context, "sources": sources}

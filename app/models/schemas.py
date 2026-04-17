@@ -12,9 +12,11 @@ class IngestResponse(BaseModel):
 
 
 # --- Ingest Directory ---
+from pathlib import Path as _Path
+_DEFAULT_RAW_DIR = str(_Path(__file__).resolve().parent.parent / "data" / "raw")
 
 class IngestDirectoryRequest(BaseModel):
-    dir_path: str   # path to directory containing text files (e.g. "data/raw")
+    dir_path: str = _DEFAULT_RAW_DIR   # defaults to <project>/data/raw
 
 
 class IngestDirectoryResponse(BaseModel):
@@ -33,3 +35,22 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: list[str]
+
+
+# --- Chat ---
+
+class MessageRequest(BaseModel):
+    message: str      # the user's message text
+
+
+class MessageResponse(BaseModel):
+    answer: str           # LLM-generated answer
+    sources: list[str]    # source files used to answer (from search_kb)
+
+
+class MessageRecord(BaseModel):
+    id: str
+    session_id: str
+    role: str             # 'user' or 'assistant'
+    content: str
+    created_at: str

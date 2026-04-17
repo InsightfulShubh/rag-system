@@ -1,0 +1,38 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Secrets — NEVER bake .env into the image
+.env
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Tests
+tests/
+
+# Docs / local tooling
+README.md
+*.postman_collection.json
+
+# SQLite chat history (stateful, should not be baked in)
+data/chat.db
