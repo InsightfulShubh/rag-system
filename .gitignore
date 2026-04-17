@@ -1,0 +1,30 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Environment variables (DO NOT COMMIT)
+.env
+
+# # Data & embeddings
+# data/embeddings/
+# *.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

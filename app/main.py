@@ -1,0 +1,25 @@
+from fastapi import FastAPI
+from app.routes import ingest, query
+
+app = FastAPI(
+    title="RAG System",
+    description=(
+        "Simple Retrieval-Augmented Generation API. "
+        "Uses two-stage retrieval: file-level cosine similarity to select top 2 files, "
+        "then chunk-level cosine similarity to build LLM context."
+    ),
+    version="1.0.0",
+)
+
+app.include_router(ingest.router, prefix="/api")
+app.include_router(query.router, prefix="/api")
+
+
+@app.get("/health")
+def health_check():
+    """
+    Health check endpoint.
+    Returns 200 OK when the server is running.
+    Used by deployment systems to verify the service is alive.
+    """
+    return {"status": "ok"}
