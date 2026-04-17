@@ -1,6 +1,19 @@
-fastapi
-uvicorn[standard]
-openai
-python-dotenv
-pydantic
-numpy
+﻿# Direct dependencies only
+# Transitive packages are resolved and installed automatically by pip.
+
+# API framework
+fastapi==0.135.3
+uvicorn==0.44.0
+
+# LLM & embeddings
+openai==2.32.0
+httpx==0.28.1          # HTTP transport used by openai SDK
+
+# Data / ML
+numpy==2.4.4
+
+# Schema validation
+pydantic==2.13.1
+
+# Config
+python-dotenv==1.2.2

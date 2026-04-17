@@ -37,5 +37,18 @@ class Settings:
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "50"))
 
+    # Chat agent settings
+    history_limit: int = int(os.getenv("HISTORY_LIMIT", "6"))
+    # force_tool_usage=True → tool_choice="required": LLM MUST call search_kb on every turn.
+    # Set to False (FORCE_TOOL_USAGE=false in .env) to let the LLM decide ("auto").
+    force_tool_usage: bool = os.getenv("FORCE_TOOL_USAGE", "true").lower() == "true"
+    system_prompt: str = os.getenv(
+        "SYSTEM_PROMPT",
+        "You are a helpful assistant with access to a knowledge base.\n"
+        "- Use the search_kb tool whenever the user's question requires external knowledge from documents.\n"
+        "- If the answer is not found in the context returned by search_kb, say \"I don't know\".\n"
+        "- Be concise and accurate.",
+    )
+
 
 settings = Settings()
