@@ -33,7 +33,7 @@ Query
   │
   ▼
 Stage 1 — File-level retrieval
-  Compare query embedding against ALL file embeddings (numpy matrix op)
+  Perform vectorized cosine similarity against all file embeddings using NumPy for efficient batch computation
   → Select top 2 most relevant files
   │
   ▼
@@ -47,6 +47,10 @@ Stage 2 — Chunk-level retrieval
   ▼
 [LLM → Answer + Sources]
 ```
+
+**Memory optimization:**
+- File embeddings are preloaded in memory at startup for fast retrieval during Stage 1
+- Chunk embeddings are lazily loaded per selected file to optimize memory usage and avoid loading the entire KB
 
 ---
 
@@ -225,6 +229,7 @@ The following trade-offs were made intentionally for simplicity and time constra
 
 ## Future Improvements
 
+- Evaluation framework (precision, LLM-as-judge metrics)
 - Pluggable vector store (FAISS, ChromaDB)
 - LLM-based file summarization for better file-level embeddings
 - Hybrid search (keyword + semantic / BM25 + dense)
