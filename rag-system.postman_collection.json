@@ -1,0 +1,93 @@
+{
+  "info": {
+    "name": "RAG System",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/health"
+      }
+    },
+    {
+      "name": "Ingest All Files",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/ingest-all",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dir_path\": \"data/raw\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Ingest Single File",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/ingest",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"file_path\": \"data/raw/FastAPI_Framework.txt\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Query - FastAPI",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/query",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"What is FastAPI and what are its main features?\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Query - Machine Learning",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/query",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"What is the difference between supervised and unsupervised learning?\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Query - Kubernetes",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/query",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"How does Kubernetes manage container orchestration?\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Query - Out of scope (hallucination test)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/query",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"What is the population of Paris?\"\n}"
+        }
+      }
+    }
+  ]
+}
