@@ -87,7 +87,6 @@ rag-system/
 ├── .env                         # Local config (not committed)
 ├── .env-sample                  # Config template
 ├── requirements.txt
-└── start-server.ps1             # Helper script to restart server
 ```
 
 ---
