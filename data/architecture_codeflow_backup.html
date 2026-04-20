@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RAG System — Architecture & Code Flow</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #1a1d27; --border: #2a2d3d;
+    --accent: #5b8dee; --green: #3ecf8e; --orange: #f59e0b;
+    --red: #ef4444; --purple: #a78bfa; --teal: #22d3ee;
+    --text: #e2e8f0; --muted: #94a3b8; --code-bg: #0d1117;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+  h1 { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  h2 { font-size: 1.4rem; font-weight: 600; color: var(--teal); margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+  h3 { font-size: 1.05rem; font-weight: 600; color: var(--orange); margin-bottom: .5rem; }
+  .header { background: var(--panel); padding: 2rem 3rem; border-bottom: 2px solid var(--accent); }
+  .header p { color: var(--muted); margin-top: .4rem; max-width: 700px; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+  .section { margin-bottom: 3rem; }
+
+  /* ── NAV TABS ── */
+  .tabs { display: flex; gap: .5rem; margin-bottom: 2rem; flex-wrap: wrap; }
+  .tab { padding: .5rem 1.2rem; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); cursor: pointer; font-size: .9rem; transition: all .2s; }
+  .tab:hover, .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── CARD GRID ── */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.5rem; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.3rem; }
+  .card-title { font-size: 1rem; font-weight: 700; margin-bottom: .7rem; display: flex; align-items: center; gap: .5rem; }
+  .badge { font-size: .7rem; padding: .15rem .5rem; border-radius: 4px; font-weight: 600; }
+  .badge-blue  { background: #1e3a5f; color: var(--accent); }
+  .badge-green { background: #0d3321; color: var(--green); }
+  .badge-purple{ background: #2d1f4e; color: var(--purple); }
+  .badge-orange{ background: #3d2500; color: var(--orange); }
+  .badge-teal  { background: #0a2d35; color: var(--teal); }
+  .badge-red   { background: #3d1010; color: var(--red); }
+  .file-path { font-size: .78rem; color: var(--muted); margin-bottom: .8rem; font-family: monospace; }
+
+  /* ── METHOD TABLE ── */
+  .method { margin-bottom: 1rem; border-left: 3px solid var(--accent); padding-left: .8rem; }
+  .method-name { font-family: monospace; font-size: .9rem; color: var(--green); font-weight: 600; }
+  .method-sig  { font-family: monospace; font-size: .78rem; color: var(--purple); margin-bottom: .3rem; }
+  .io-table { width: 100%; border-collapse: collapse; margin-top: .4rem; font-size: .8rem; }
+  .io-table th { text-align: left; padding: .3rem .5rem; background: #161926; color: var(--muted); font-weight: 600; font-size: .75rem; }
+  .io-table td { padding: .3rem .5rem; border-top: 1px solid var(--border); vertical-align: top; }
+  .io-table td:first-child { color: var(--orange); font-family: monospace; white-space: nowrap; }
+  .io-table td:nth-child(2) { color: var(--teal); font-family: monospace; }
+  .io-table td:last-child { color: var(--muted); }
+  .desc { font-size: .82rem; color: var(--muted); margin-bottom: .5rem; }
+
+  /* ── FLOWCHART ── */
+  .flow-wrap { overflow-x: auto; }
+  svg.flow { display: block; margin: 0 auto; }
+  .node rect, .node polygon { stroke-width: 1.5; rx: 6; }
+  .node text { font-family: 'Segoe UI', sans-serif; font-size: 12px; fill: #e2e8f0; }
+  .edge path { fill: none; stroke: #4a5568; stroke-width: 1.5; marker-end: url(#arr); }
+  .edge text { font-family: 'Segoe UI', sans-serif; font-size: 10px; fill: #94a3b8; }
+
+  /* ── ROUTE TABLE ── */
+  .rt { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  .rt th { background: #161926; color: var(--muted); text-align: left; padding: .5rem .8rem; font-size: .8rem; font-weight: 600; }
+  .rt td { padding: .5rem .8rem; border-top: 1px solid var(--border); vertical-align: top; }
+  .method-get    { color: var(--green); font-family: monospace; font-weight: 700; }
+  .method-post   { color: var(--accent); font-family: monospace; font-weight: 700; }
+  .method-delete { color: var(--red); font-family: monospace; font-weight: 700; }
+  .endpoint { font-family: monospace; color: var(--text); }
+  .req-resp { font-family: monospace; font-size: .78rem; color: var(--muted); background: var(--code-bg); padding: .3rem .5rem; border-radius: 4px; display: inline-block; }
+
+  /* ── DATA FLOW ── */
+  .df-step { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.2rem; }
+  .step-num { background: var(--accent); color: #fff; font-weight: 700; font-size: .85rem; min-width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: .1rem; }
+  .step-body { flex: 1; }
+  .step-title { font-weight: 600; color: var(--text); font-size: .92rem; }
+  .step-detail { font-size: .82rem; color: var(--muted); margin-top: .2rem; }
+  .step-io { font-size: .8rem; margin-top: .3rem; font-family: monospace; }
+  .step-io span { padding: .1rem .4rem; border-radius: 3px; margin-right: .3rem; }
+  .in  { background: #0d3321; color: var(--green); }
+  .out { background: #1e3a5f; color: var(--accent); }
+  .arrow-down { text-align: center; color: var(--border); font-size: 1.2rem; margin: -.4rem 0; }
+
+  /* ── DB SCHEMA ── */
+  .schema { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .table-box { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; min-width: 260px; overflow: hidden; }
+  .table-header { background: #1a2744; padding: .5rem 1rem; font-weight: 700; color: var(--accent); font-size: .9rem; }
+  .table-row { padding: .35rem 1rem; border-top: 1px solid var(--border); font-family: monospace; font-size: .82rem; display: flex; gap: 1rem; }
+  .col-name { color: var(--text); flex: 1; }
+  .col-type { color: var(--purple); flex: 1; }
+  .col-note { color: var(--muted); font-size: .78rem; }
+  .pk { color: var(--orange); font-size: .7rem; margin-left: .3rem; }
+  .fk { color: var(--teal); font-size: .7rem; margin-left: .3rem; }
+
+  /* ── config table ── */
+  .cfg { width: 100%; border-collapse: collapse; font-size: .83rem; }
+  .cfg th { background: #161926; color: var(--muted); text-align: left; padding: .4rem .8rem; font-size: .78rem; font-weight: 600; }
+  .cfg td { padding: .4rem .8rem; border-top: 1px solid var(--border); }
+  .cfg td:first-child { font-family: monospace; color: var(--green); }
+  .cfg td:nth-child(2) { font-family: monospace; color: var(--orange); }
+  .cfg td:last-child { color: var(--muted); font-size: .8rem; }
+
+  code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 3px; font-size: .82rem; color: var(--teal); font-family: monospace; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>RAG System — Architecture &amp; Code Flow</h1>
+  <p>Complete reference: every module, class, method, input, output and data flow. Version 2.0.0 — FastAPI · OpenAI Tool Calling · SQLite Sessions</p>
+</div>
+
+<div class="container">
+
+  <!-- ── TABS ── -->
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('overview')">Overview</div>
+    <div class="tab" onclick="showTab('flow-ingest')">Ingest Flow</div>
+    <div class="tab" onclick="showTab('flow-query')">Query Flow</div>
+    <div class="tab" onclick="showTab('flow-chat')">Chat Agent Flow</div>
+    <div class="tab" onclick="showTab('modules')">All Modules</div>
+    <div class="tab" onclick="showTab('routes')">API Routes</div>
+    <div class="tab" onclick="showTab('database')">Database</div>
+    <div class="tab" onclick="showTab('config')">Config</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- TAB: OVERVIEW                                             -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div id="overview" class="tab-content active section">
+    <h2>System Overview</h2>
+
+    <div class="grid" style="margin-bottom:2rem">
+      <div class="card">
+        <div class="card-title"><span class="badge badge-blue">Entry</span> app/main.py</div>
+        <div class="desc">FastAPI application factory. Registers three routers (<code>/api/ingest</code>, <code>/api/query</code>, <code>/api/sessions</code>). Calls <code>init_db()</code> at startup to create SQLite tables.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="badge badge-green">Ingest</span> Two-step pipeline</div>
+        <div class="desc">Read raw <code>.txt</code> → chunk (sliding window, 500 chars / 50 overlap) → batch embed (1 API call per file) → mean embedding for file-level index → save to JSON files.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="badge badge-orange">Retrieval</span> Two-stage RAG</div>
+        <div class="desc"><b>Stage 1:</b> NumPy vectorized cosine similarity against all file embeddings → top 2 files.<br><b>Stage 2:</b> Lazy-load chunks for those 2 files only → top 5 chunks. ~40 comparisons total instead of 40k+.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="badge badge-purple">Chat Agent</span> Tool calling loop</div>
+        <div class="desc">LLM receives <code>search_kb</code> tool definition + conversation history. Forced to call the tool (<code>FORCE_TOOL_USAGE=true</code>). Backend executes retrieval, feeds result back. Second LLM call generates final answer.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="badge badge-teal">Persistence</span> SQLite + JSON</div>
+        <div class="desc">Chat sessions &amp; messages: SQLite (<code>data/chat.db</code>). Embeddings: JSON files (<code>data/embeddings/</code>). Absolute paths used everywhere to avoid working-directory issues.</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="badge badge-red">Providers</span> Dual LLM support</div>
+        <div class="desc">Single <code>USE_AZURE_OPENAI</code> flag in <code>.env</code> switches between OpenAI public API and Azure OpenAI (EPAM DIAL). No code changes needed. Factory in <code>clients/llm_client.py</code>.</div>
+      </div>
+    </div>
+
+    <h2>High-Level Component Map</h2>
+    <div class="flow-wrap">
+      <svg class="flow" width="1100" height="340" viewBox="0 0 1100 340">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4a5568"/>
+          </marker>
+        </defs>
+
+        <!-- HTTP Client -->
+        <rect x="10" y="140" width="120" height="50" rx="8" fill="#1e3a5f" stroke="#5b8dee" stroke-width="1.5"/>
+        <text x="70" y="162" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">HTTP Client</text>
+        <text x="70" y="178" text-anchor="middle" fill="#94a3b8" font-size="10">Postman / curl</text>
+
+        <!-- FastAPI -->
+        <rect x="190" y="120" width="130" height="90" rx="8" fill="#1a2744" stroke="#5b8dee" stroke-width="2"/>
+        <text x="255" y="148" text-anchor="middle" fill="#5b8dee" font-size="13" font-weight="700">FastAPI</text>
+        <text x="255" y="165" text-anchor="middle" fill="#94a3b8" font-size="10">main.py</text>
+        <text x="255" y="182" text-anchor="middle" fill="#94a3b8" font-size="10">/api/ingest</text>
+        <text x="255" y="196" text-anchor="middle" fill="#94a3b8" font-size="10">/api/query  /api/sessions</text>
+
+        <!-- Services -->
+        <rect x="400" y="30" width="130" height="50" rx="8" fill="#0d3321" stroke="#3ecf8e" stroke-width="1.5"/>
+        <text x="465" y="53" text-anchor="middle" fill="#3ecf8e" font-size="12" font-weight="600">IngestionService</text>
+        <text x="465" y="68" text-anchor="middle" fill="#94a3b8" font-size="10">services/ingestion.py</text>
+
+        <rect x="400" y="140" width="130" height="50" rx="8" fill="#2d1f4e" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="465" y="163" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="600">RetrievalService</text>
+        <text x="465" y="178" text-anchor="middle" fill="#94a3b8" font-size="10">services/retrieval.py</text>
+
+        <rect x="400" y="250" width="130" height="50" rx="8" fill="#3d2500" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="465" y="272" text-anchor="middle" fill="#f59e0b" font-size="12" font-weight="600">ChatService</text>
+        <text x="465" y="288" text-anchor="middle" fill="#94a3b8" font-size="10">services/chat_service.py</text>
+
+        <!-- Utils / Storage -->
+        <rect x="620" y="30" width="130" height="50" rx="8" fill="#1a1d27" stroke="#2a2d3d" stroke-width="1.5"/>
+        <text x="685" y="53" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">VectorStore</text>
+        <text x="685" y="68" text-anchor="middle" fill="#94a3b8" font-size="10">storage/vector_store.py</text>
+
+        <rect x="620" y="140" width="130" height="50" rx="8" fill="#1a1d27" stroke="#2a2d3d" stroke-width="1.5"/>
+        <text x="685" y="163" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">LLMService</text>
+        <text x="685" y="178" text-anchor="middle" fill="#94a3b8" font-size="10">services/llm.py</text>
+
+        <rect x="620" y="250" width="130" height="50" rx="8" fill="#1a1d27" stroke="#2a2d3d" stroke-width="1.5"/>
+        <text x="685" y="272" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">db.py (SQLite)</text>
+        <text x="685" y="288" text-anchor="middle" fill="#94a3b8" font-size="10">storage/db.py</text>
+
+        <!-- OpenAI -->
+        <rect x="840" y="85" width="140" height="50" rx="8" fill="#161926" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="910" y="108" text-anchor="middle" fill="#22d3ee" font-size="12" font-weight="600">OpenAI / Azure</text>
+        <text x="910" y="123" text-anchor="middle" fill="#94a3b8" font-size="10">Embeddings + Chat API</text>
+
+        <!-- JSON Files -->
+        <rect x="840" y="200" width="140" height="50" rx="8" fill="#161926" stroke="#4a5568" stroke-width="1.5"/>
+        <text x="910" y="223" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">JSON Files</text>
+        <text x="910" y="238" text-anchor="middle" fill="#94a3b8" font-size="10">files.json, chunks/*.json</text>
+
+        <!-- Edges -->
+        <line x1="130" y1="165" x2="188" y2="165" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="320" y1="145" x2="398" y2="75" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="320" y1="165" x2="398" y2="165" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="320" y1="185" x2="398" y2="270" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="530" y1="55" x2="618" y2="55" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="530" y1="165" x2="618" y2="165" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="530" y1="270" x2="618" y2="270" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="750" y1="55" x2="838" y2="105" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="750" y1="165" x2="838" y2="115" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="750" y1="55" x2="838" y2="215" stroke="#4a5568" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr)"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- TAB: INGEST FLOW                                          -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div id="flow-ingest" class="tab-content section">
+    <h2>Ingestion Pipeline Flow</h2>
+    <p class="desc" style="margin-bottom:1.5rem">Triggered by <code>POST /api/ingest</code> (single file) or <code>POST /api/ingest-all</code> (directory). Run once before querying.</p>
+
+    <div class="df-step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">HTTP Request received by route</div>
+        <div class="step-detail"><code>routes/ingest.py → ingest_directory(request)</code></div>
+        <div class="step-io"><span class="in">IN</span> <code>IngestDirectoryRequest { dir_path: str }</code> (defaults to absolute <code>data/raw/</code>)</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">DocumentReader.read_file(file_path)</div>
+        <div class="step-detail"><code>storage/document_reader.py</code> — reads raw .txt, UTF-8 with <code>errors='replace'</code></div>
+        <div class="step-io"><span class="in">IN</span> <code>file_path: str</code> &nbsp; <span class="out">OUT</span> <code>text: str</code> (full file content)</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">split_into_chunks(text)</div>
+        <div class="step-detail"><code>utils/chunking.py</code> — sliding window. Step = chunk_size − overlap = 500 − 50 = 450 chars per advance.</div>
+        <div class="step-io"><span class="in">IN</span> <code>text: str</code> &nbsp; <span class="out">OUT</span> <code>chunks_text: list[str]</code> (~N chunks of ≤500 chars each)</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">get_embeddings_batch(chunks_text)</div>
+        <div class="step-detail"><code>utils/embedding.py</code> — ONE API call to OpenAI/Azure for all chunks of the file. Returns N vectors of 1536 floats each.</div>
+        <div class="step-io"><span class="in">IN</span> <code>texts: list[str]</code> &nbsp; <span class="out">OUT</span> <code>embeddings: list[list[float]]</code> shape (N, 1536)</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">_mean_embedding(embeddings)</div>
+        <div class="step-detail"><code>services/ingestion.py</code> — <code>np.mean(matrix, axis=0)</code>. Produces a single 1536-float vector representing the whole file.</div>
+        <div class="step-io"><span class="in">IN</span> <code>list[list[float]]</code> shape (N, 1536) &nbsp; <span class="out">OUT</span> <code>file_embedding: list[float]</code> (1536,)</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <div class="step-title">VectorStore.save_chunks(file_name, chunks)</div>
+        <div class="step-detail"><code>storage/vector_store.py</code> — writes <code>data/embeddings/chunks/&lt;file_name&gt;.json</code>. One JSON file per document.</div>
+        <div class="step-io"><span class="in">IN</span> <code>file_name: str, chunks: list[{text, embedding}]</code> &nbsp; <span class="out">OUT</span> JSON file on disk</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <div class="step-title">VectorStore.save_file_embedding(file_name, embedding)</div>
+        <div class="step-detail"><code>storage/vector_store.py</code> — appends/updates entry in <code>data/embeddings/files.json</code>. This is what Stage 1 reads.</div>
+        <div class="step-io"><span class="in">IN</span> <code>file_name: str, embedding: list[float]</code> &nbsp; <span class="out">OUT</span> <code>files.json</code> updated on disk</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">8</div>
+      <div class="step-body">
+        <div class="step-title">Response returned</div>
+        <div class="step-io"><span class="out">OUT</span> <code>IngestDirectoryResponse { files_processed, total_chunks, results, errors }</code></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- TAB: QUERY FLOW                                           -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div id="flow-query" class="tab-content section">
+    <h2>Single-Turn Query Flow — <code>POST /api/query</code></h2>
+    <p class="desc" style="margin-bottom:1.5rem">Stateless. No session. No history. Embeds query → 2-stage retrieval → LLM answer.</p>
+
+    <div class="df-step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">HTTP request → route</div>
+        <div class="step-detail"><code>routes/query.py → answer_query(request)</code></div>
+        <div class="step-io"><span class="in">IN</span> <code>QueryRequest { query: str }</code></div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">RetrievalService.retrieve_and_answer(query)</div>
+        <div class="step-detail"><code>services/retrieval.py</code></div>
+        <div class="step-io"><span class="in">IN</span> <code>query: str</code></div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">get_embedding(query)</div>
+        <div class="step-detail"><code>utils/embedding.py</code> — single API call to OpenAI/Azure Embeddings.</div>
+        <div class="step-io"><span class="in">IN</span> <code>text: str</code> &nbsp; <span class="out">OUT</span> <code>query_embedding: list[float]</code> (1536 floats)</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Stage 1: _get_top_files(query_embedding, top_k=2)</div>
+        <div class="step-detail">Loads <code>files.json</code> → NumPy matrix (N_files × 1536) → vectorized cosine: <code>scores = (matrix @ query_vec) / (norms_matrix × norm_query)</code> → <code>np.argpartition</code> O(n) top-2 selection.</div>
+        <div class="step-io"><span class="in">IN</span> <code>query_embedding: list[float], top_k=2</code> &nbsp; <span class="out">OUT</span> <code>top_files: list[str]</code> e.g. <code>["Machine_Learning.txt", "Deep_Learning.txt"]</code></div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">Stage 2: _get_top_chunks(query_embedding, top_files, top_k=5)</div>
+        <div class="step-detail">Lazy-loads <code>chunks/Machine_Learning.txt.json</code> + <code>chunks/Deep_Learning.txt.json</code>. Computes cosine similarity across ~40 chunks. Returns top-5 merged across both files.</div>
+        <div class="step-io"><span class="in">IN</span> <code>query_embedding, file_names: list[str], top_k=5</code> &nbsp; <span class="out">OUT</span> <code>top_chunks: list[{text, embedding, file_name}]</code></div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <div class="step-title">LLMService.generate_answer(query, top_chunks)</div>
+        <div class="step-detail"><code>services/llm.py</code> — builds system + user messages with context injected. Calls <code>chat.completions.create()</code>. Temperature=0 (deterministic).</div>
+        <div class="step-io"><span class="in">IN</span> <code>query: str, context_chunks: list[dict]</code> &nbsp; <span class="out">OUT</span> <code>answer: str</code></div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <div class="step-title">Response returned</div>
+        <div class="step-io"><span class="out">OUT</span> <code>QueryResponse { answer: str, sources: list[str] }</code></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- TAB: CHAT AGENT FLOW                                      -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div id="flow-chat" class="tab-content section">
+    <h2>Chat Agent Flow — <code>POST /api/sessions/{id}/messages</code></h2>
+    <p class="desc" style="margin-bottom:1.5rem">Stateful. OpenAI tool/function calling loop. History from SQLite. Forced KB search (<code>FORCE_TOOL_USAGE=true</code> by default).</p>
+
+    <div class="df-step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">HTTP request → route → ChatService.chat()</div>
+        <div class="step-detail"><code>routes/session.py → send_message(session_id, request)</code> → checks <code>db.session_exists()</code> → calls <code>chat_service.chat(session_id, message)</code></div>
+        <div class="step-io"><span class="in">IN</span> <code>session_id: str, MessageRequest { message: str }</code></div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">db.save_message(session_id, "user", message)</div>
+        <div class="step-detail"><code>storage/db.py</code> — INSERT into <code>messages</code> table with UUID id and UTC timestamp.</div>
+        <div class="step-io"><span class="in">IN</span> <code>session_id, role="user", content: str</code> &nbsp; <span class="out">OUT</span> <code>{id, session_id, role, content, created_at}</code></div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">db.get_messages(session_id, limit=HISTORY_LIMIT)</div>
+        <div class="step-detail"><code>storage/db.py</code> — SELECT last 6 rows DESC then reversed to chronological order. This is the conversation context window.</div>
+        <div class="step-io"><span class="in">IN</span> <code>session_id: str, limit=6</code> &nbsp; <span class="out">OUT</span> <code>history: list[{role, content, ...}]</code> oldest first</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Build messages list for LLM</div>
+        <div class="step-detail"><code>messages = [{role:"system", content: settings.system_prompt}, ...history]</code>. The user message is already the last history item — not appended again.</div>
+        <div class="step-io"><span class="out">OUT</span> <code>messages: list[{role, content}]</code> shape: [system, user_1, assistant_1, …, user_N]</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">LLM Call #1 — with tool definition</div>
+        <div class="step-detail"><code>client.chat.completions.create(model, messages, tools=[SEARCH_KB_TOOL], tool_choice="required")</code></div>
+        <div class="step-io">
+          <span class="in">IN</span> <code>messages, tools=[SEARCH_KB_TOOL]</code><br>
+          <span class="out">OUT (tool call)</span> <code>assistant_msg.tool_calls[0] = {id, function.name="search_kb", function.arguments='{"query":"..."}'}</code>
+        </div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <div class="step-title">execute_tool_call(tool_call) → search_kb(query)</div>
+        <div class="step-detail"><code>services/tools.py</code> — parses <code>tool_call.function.arguments</code> (JSON string) → calls <code>retrieval_service.search(query)</code> → full 2-stage retrieval (no LLM).</div>
+        <div class="step-io">
+          <span class="in">IN</span> <code>tool_call object</code><br>
+          <span class="out">OUT</span> <code>json.dumps({context: "[Source:…]\n…", sources: ["Machine_Learning.txt"]})</code>
+        </div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <div class="step-title">Append tool result to messages</div>
+        <div class="step-detail">messages thread becomes: <code>[system … user assistant(tool_call) tool(result)]</code>. <code>tool_call_id</code> must match the request id — OpenAI enforces this pairing.</div>
+        <div class="step-io"><span class="in">IN</span> <code>tool_call_id, content: json_string</code> &nbsp; <span class="out">OUT</span> messages list extended</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">8</div>
+      <div class="step-body">
+        <div class="step-title">LLM Call #2 — final answer</div>
+        <div class="step-detail"><code>tool_choice="none"</code> — LLM reads context from tool result and writes grounded text answer. Cannot call tool again.</div>
+        <div class="step-io"><span class="in">IN</span> <code>messages (now includes tool result)</code> &nbsp; <span class="out">OUT</span> <code>assistant_msg.content: str</code> (final answer text)</div>
+      </div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="df-step">
+      <div class="step-num">9</div>
+      <div class="step-body">
+        <div class="step-title">db.save_message(session_id, "assistant", answer)</div>
+        <div class="step-detail">Persists the reply so it becomes part of history for the next turn.</div>
+        <div class="step-io"><span class="out">OUT</span> <code>MessageResponse { answer: str, sources: list[str] }</code></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- TAB: ALL MODULES                                          -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div id="modules" class="tab-content section">
+    <h2>All Modules — Methods, Inputs &amp; Outputs</h2>
+    <div class="grid">
+
+      <!-- main.py -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-blue">Entry</span> app/main.py</div>
+        <div class="file-path">app/main.py</div>
+        <div class="method">
+          <div class="method-name">startup()</div>
+          <div class="method-sig">@app.on_event("startup") → None</div>
+          <div class="desc">Calls <code>init_db()</code> once at server start. No-op if tables already exist.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">health_check()</div>
+          <div class="method-sig">GET /health → dict</div>
+          <table class="io-table"><tr><th>Dir</th><th>Name</th><th>Type</th><th>Notes</th></tr>
+            <tr><td>OUT</td><td>status</td><td>dict</td><td>{"status": "ok"}</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- config.py -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-orange">Config</span> app/config.py</div>
+        <div class="file-path">app/config.py — class Settings</div>
+        <div class="desc">All settings loaded from <code>.env</code> via <code>python-dotenv</code>. Path resolved absolutely from <code>__file__</code>.</div>
+        <table class="io-table"><tr><th>Field</th><th>Default</th><th>Purpose</th></tr>
+          <tr><td>use_azure_openai</td><td>false</td><td>Switch OpenAI vs Azure</td></tr>
+          <tr><td>llm_temperature</td><td>0.0</td><td>LLM determinism</td></tr>
+          <tr><td>chunk_size</td><td>500</td><td>Chars per chunk</td></tr>
+          <tr><td>chunk_overlap</td><td>50</td><td>Overlap between chunks</td></tr>
+          <tr><td>history_limit</td><td>6</td><td>Messages per LLM context</td></tr>
+          <tr><td>force_tool_usage</td><td>true</td><td>Always call search_kb</td></tr>
+          <tr><td>system_prompt</td><td>(built-in)</td><td>LLM instruction</td></tr>
+        </table>
+      </div>
+
+      <!-- llm_client.py -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-red">Client</span> app/clients/llm_client.py</div>
+        <div class="file-path">app/clients/llm_client.py</div>
+        <div class="method">
+          <div class="method-name">get_client()</div>
+          <div class="method-sig">() → OpenAI | AzureOpenAI</div>
+          <div class="desc">Factory. Returns <code>AzureOpenAI(api_key, endpoint, version)</code> if <code>USE_AZURE_OPENAI=true</code>, else <code>OpenAI(api_key, base_url)</code>.</div>
+        </div>
+      </div>
+
+      <!-- DocumentReader -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-teal">Storage</span> document_reader.py</div>
+        <div class="file-path">app/storage/document_reader.py — class DocumentReader</div>
+        <div class="method">
+          <div class="method-name">read_file(file_path)</div>
+          <div class="method-sig">(file_path: str) → str</div>
+          <table class="io-table"><tr><th>Dir</th><th>Name</th><th>Type</th><th>Notes</th></tr>
+            <tr><td>IN</td><td>file_path</td><td>str</td><td>absolute or relative path</td></tr>
+            <tr><td>OUT</td><td>text</td><td>str</td><td>full file content, UTF-8</td></tr>
+            <tr><td>RAISE</td><td>FileNotFoundError</td><td>—</td><td>if path doesn't exist</td></tr>
+          </table>
+        </div>
+        <div class="method">
+          <div class="method-name">get_file_name(file_path)</div>
+          <div class="method-sig">(file_path: str) → str</div>
+          <div class="desc">Returns <code>os.path.basename(file_path)</code>. Used as the unique storage key.</div>
+        </div>
+      </div>
+
+      <!-- VectorStore -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-teal">Storage</span> vector_store.py</div>
+        <div class="file-path">app/storage/vector_store.py — class VectorStore</div>
+        <div class="method">
+          <div class="method-name">save_chunks(file_name, chunks)</div>
+          <div class="method-sig">(file_name: str, chunks: list[dict]) → None</div>
+          <div class="desc">Writes <code>data/embeddings/chunks/&lt;file_name&gt;.json</code>. Upsert if exists.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">save_file_embedding(file_name, embedding)</div>
+          <div class="method-sig">(file_name: str, embedding: list[float]) → None</div>
+          <div class="desc">Adds/updates entry in <code>files.json</code>. Key = file_name, value = {embedding: [...]}.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">load_all_file_embeddings()</div>
+          <div class="method-sig">() → dict[str, list[float]]</div>
+          <div class="desc">Reads <code>files.json</code>. Returns <code>{filename: embedding_vector}</code>. Returns <code>{}</code> if file empty or missing.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">load_chunks(file_name)</div>
+          <div class="method-sig">(file_name: str) → list[dict]</div>
+          <div class="desc">Lazy-loads chunk JSON for one file. Returns <code>[]</code> if not found.</div>
+        </div>
+      </div>
+
+      <!-- chunking -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-green">Util</span> utils/chunking.py</div>
+        <div class="file-path">app/utils/chunking.py</div>
+        <div class="method">
+          <div class="method-name">split_into_chunks(text, chunk_size, overlap)</div>
+          <div class="method-sig">(text: str, chunk_size=500, overlap=50) → list[str]</div>
+          <table class="io-table"><tr><th>Dir</th><th>Name</th><th>Type</th><th>Notes</th></tr>
+            <tr><td>IN</td><td>text</td><td>str</td><td>full document text</td></tr>
+            <tr><td>IN</td><td>chunk_size</td><td>int</td><td>default from settings</td></tr>
+            <tr><td>IN</td><td>overlap</td><td>int</td><td>default from settings</td></tr>
+            <tr><td>OUT</td><td>chunks</td><td>list[str]</td><td>each ≤chunk_size chars</td></tr>
+          </table>
+          <div class="desc" style="margin-top:.4rem">Step = chunk_size − overlap. Sliding window. Preserves context at boundaries.</div>
+        </div>
+      </div>
+
+      <!-- embedding -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-green">Util</span> utils/embedding.py</div>
+        <div class="file-path">app/utils/embedding.py</div>
+        <div class="method">
+          <div class="method-name">get_embedding(text)</div>
+          <div class="method-sig">(text: str) → list[float]</div>
+          <div class="desc">Single embedding. Used at query time. One API call.</div>
+          <table class="io-table"><tr><th>Dir</th><th>Name</th><th>Type</th></tr>
+            <tr><td>IN</td><td>text</td><td>str (query string)</td></tr>
+            <tr><td>OUT</td><td>embedding</td><td>list[float] length 1536</td></tr>
+          </table>
+        </div>
+        <div class="method">
+          <div class="method-name">get_embeddings_batch(texts)</div>
+          <div class="method-sig">(texts: list[str]) → list[list[float]]</div>
+          <div class="desc">Batch embedding for all chunks of a file. One API call regardless of N. Up to 2048 inputs per call.</div>
+        </div>
+      </div>
+
+      <!-- IngestionService -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-green">Service</span> services/ingestion.py</div>
+        <div class="file-path">app/services/ingestion.py — class IngestionService</div>
+        <div class="method">
+          <div class="method-name">ingest(file_path)</div>
+          <div class="method-sig">(file_path: str) → int</div>
+          <div class="desc">Full pipeline for one file. Read → chunk → batch embed → mean embed → save. Returns chunk count.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">ingest_directory(dir_path)</div>
+          <div class="method-sig">(dir_path: str) → dict</div>
+          <div class="desc">Iterates all files in dir, calls <code>ingest()</code> per file. Continues on errors. Returns <code>{files_processed, total_chunks, results, errors}</code>.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">_mean_embedding(embeddings)</div>
+          <div class="method-sig">(embeddings: list[list[float]]) → list[float]</div>
+          <div class="desc">Private. <code>np.mean(np.array(embeddings), axis=0).tolist()</code>. File-level representation.</div>
+        </div>
+      </div>
+
+      <!-- RetrievalService -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-purple">Service</span> services/retrieval.py</div>
+        <div class="file-path">app/services/retrieval.py — class RetrievalService</div>
+        <div class="method">
+          <div class="method-name">retrieve_and_answer(query)</div>
+          <div class="method-sig">(query: str) → dict</div>
+          <div class="desc">Full pipeline: embed → Stage 1 → Stage 2 → LLM. Used by <code>/api/query</code>.</div>
+          <table class="io-table"><tr><th>Dir</th><th>Name</th><th>Type</th></tr>
+            <tr><td>OUT</td><td>answer</td><td>str</td></tr>
+            <tr><td>OUT</td><td>sources</td><td>list[str]</td></tr>
+          </table>
+        </div>
+        <div class="method">
+          <div class="method-name">search(query)</div>
+          <div class="method-sig">(query: str) → dict</div>
+          <div class="desc">Retrieval only — NO LLM call. Used by <code>search_kb</code> tool inside chat agent.</div>
+          <table class="io-table"><tr><th>Dir</th><th>Name</th><th>Type</th></tr>
+            <tr><td>OUT</td><td>context</td><td>str — formatted chunks</td></tr>
+            <tr><td>OUT</td><td>sources</td><td>list[str]</td></tr>
+          </table>
+        </div>
+        <div class="method">
+          <div class="method-name">_get_top_files(query_embedding, top_k=2)</div>
+          <div class="method-sig">(list[float], int) → list[str]</div>
+          <div class="desc">Stage 1. NumPy vectorized cosine. <code>np.argpartition</code> O(n) selection.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">_get_top_chunks(query_embedding, file_names, top_k=5)</div>
+          <div class="method-sig">(list[float], list[str], int) → list[dict]</div>
+          <div class="desc">Stage 2. Lazy loads chunks for each file. Merges and re-ranks across both files. Returns top-5.</div>
+        </div>
+      </div>
+
+      <!-- LLMService -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-purple">Service</span> services/llm.py</div>
+        <div class="file-path">app/services/llm.py — class LLMService</div>
+        <div class="method">
+          <div class="method-name">generate_answer(query, context_chunks)</div>
+          <div class="method-sig">(query: str, context_chunks: list[dict]) → str</div>
+          <table class="io-table"><tr><th>Dir</th><th>Name</th><th>Type</th></tr>
+            <tr><td>IN</td><td>query</td><td>str — user question</td></tr>
+            <tr><td>IN</td><td>context_chunks</td><td>list[{text, file_name}]</td></tr>
+            <tr><td>OUT</td><td>answer</td><td>str — LLM response</td></tr>
+          </table>
+        </div>
+        <div class="method">
+          <div class="method-name">_build_messages(query, context_chunks)</div>
+          <div class="method-sig">(str, list[dict]) → list[dict]</div>
+          <div class="desc">Private. Builds <code>[{role:system,…}, {role:user, content: context+question}]</code>. System prompt instructs "answer only from context, say I don't know if not found".</div>
+        </div>
+      </div>
+
+      <!-- tools.py -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-orange">Service</span> services/tools.py</div>
+        <div class="file-path">app/services/tools.py</div>
+        <div class="method">
+          <div class="method-name">SEARCH_KB_TOOL</div>
+          <div class="method-sig">dict — OpenAI tool spec</div>
+          <div class="desc">JSON schema sent to LLM on every call. Tells LLM: tool name = <code>search_kb</code>, param = <code>query: string</code>.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">search_kb(query)</div>
+          <div class="method-sig">(query: str) → dict</div>
+          <div class="desc">Calls <code>_retrieval_service.search(query)</code>. Returns <code>{context, sources}</code>.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">execute_tool_call(tool_call)</div>
+          <div class="method-sig">(tool_call: object) → str</div>
+          <div class="desc">Dispatcher. Parses <code>tool_call.function.name</code> + <code>json.loads(arguments)</code> → calls correct Python function → returns <code>json.dumps(result)</code>. Currently only routes to <code>search_kb</code>.</div>
+        </div>
+      </div>
+
+      <!-- chat_service.py -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-orange">Service</span> chat_service.py</div>
+        <div class="file-path">app/services/chat_service.py — class ChatService</div>
+        <div class="method">
+          <div class="method-name">chat(session_id, message)</div>
+          <div class="method-sig">(session_id: str, message: str) → dict</div>
+          <div class="desc">Full tool-calling loop. 9 steps: save user msg → load history → build messages → LLM #1 (with tool) → execute tool → append result → LLM #2 (no tool) → save assistant msg → return.</div>
+          <table class="io-table"><tr><th>Dir</th><th>Name</th><th>Type</th></tr>
+            <tr><td>OUT</td><td>answer</td><td>str — assistant reply</td></tr>
+            <tr><td>OUT</td><td>sources</td><td>list[str] — deduped source files</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- session_service.py -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-teal">Service</span> session_service.py</div>
+        <div class="file-path">app/services/session_service.py — class SessionService</div>
+        <div class="method">
+          <div class="method-name">create_session()</div>
+          <div class="method-sig">() → dict</div>
+          <div class="desc">Delegates to <code>db.create_session()</code>. Returns <code>{id: uuid, created_at: iso}</code>.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">get_sessions()</div>
+          <div class="method-sig">() → list[dict]</div>
+          <div class="desc">Returns all sessions newest first.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">delete_session(session_id)</div>
+          <div class="method-sig">(session_id: str) → bool</div>
+          <div class="desc">Returns True if deleted, False if not found. CASCADE deletes all messages.</div>
+        </div>
+      </div>
+
+      <!-- db.py -->
+      <div class="card">
+        <div class="card-title"><span class="badge badge-teal">Storage</span> storage/db.py</div>
+        <div class="file-path">app/storage/db.py — module-level functions</div>
+        <div class="method">
+          <div class="method-name">init_db()</div>
+          <div class="method-sig">() → None</div>
+          <div class="desc"><code>CREATE TABLE IF NOT EXISTS sessions, messages</code>. Called at startup. Safe to call repeatedly.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">create_session()</div>
+          <div class="method-sig">() → dict {id, created_at}</div>
+        </div>
+        <div class="method">
+          <div class="method-name">get_sessions()</div>
+          <div class="method-sig">() → list[dict]</div>
+          <div class="desc">ORDER BY created_at DESC.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">delete_session(session_id)</div>
+          <div class="method-sig">(session_id: str) → bool</div>
+          <div class="desc">CASCADE deletes messages. Returns True if row found.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">save_message(session_id, role, content)</div>
+          <div class="method-sig">(str, str, str) → dict</div>
+          <div class="desc">Inserts message. Returns <code>{id, session_id, role, content, created_at}</code>.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">get_messages(session_id, limit=6)</div>
+          <div class="method-sig">(str, int) → list[dict]</div>
+          <div class="desc">SELECT last N rows DESC, then reverse to chronological. Used as LLM context window and for history endpoint.</div>
+        </div>
+        <div class="method">
+          <div class="method-name">session_exists(session_id)</div>
+          <div class="method-sig">(str) → bool</div>
+          <div class="desc">Used by routes to return 404 before calling services.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- TAB: ROUTES                                               -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div id="routes" class="tab-content section">
+    <h2>API Routes Reference</h2>
+    <table class="rt">
+      <tr><th>Method</th><th>Path</th><th>Handler</th><th>Request Body</th><th>Response</th><th>Notes</th></tr>
+      <tr>
+        <td><span class="method-get">GET</span></td>
+        <td class="endpoint">/health</td>
+        <td>main.health_check</td>
+        <td>—</td>
+        <td><span class="req-resp">{"status":"ok"}</span></td>
+        <td>No deps; always 200</td>
+      </tr>
+      <tr>
+        <td><span class="method-post">POST</span></td>
+        <td class="endpoint">/api/ingest</td>
+        <td>ingest.ingest_file</td>
+        <td><span class="req-resp">{"file_path": "data/raw/ML.txt"}</span></td>
+        <td><span class="req-resp">{"chunks_processed": 12}</span></td>
+        <td>Single file ingestion</td>
+      </tr>
+      <tr>
+        <td><span class="method-post">POST</span></td>
+        <td class="endpoint">/api/ingest-all</td>
+        <td>ingest.ingest_directory</td>
+        <td><span class="req-resp">{} or {"dir_path":"..."}</span></td>
+        <td><span class="req-resp">{"files_processed":20,"total_chunks":…}</span></td>
+        <td>Defaults to data/raw/</td>
+      </tr>
+      <tr>
+        <td><span class="method-post">POST</span></td>
+        <td class="endpoint">/api/query</td>
+        <td>query.answer_query</td>
+        <td><span class="req-resp">{"query": "What is ML?"}</span></td>
+        <td><span class="req-resp">{"answer":"…","sources":["ML.txt"]}</span></td>
+        <td>Stateless single-turn</td>
+      </tr>
+      <tr>
+        <td><span class="method-post">POST</span></td>
+        <td class="endpoint">/api/sessions</td>
+        <td>session.create_session</td>
+        <td>—</td>
+        <td><span class="req-resp">{"id":"uuid","created_at":"…"}</span></td>
+        <td>201 Created</td>
+      </tr>
+      <tr>
+        <td><span class="method-get">GET</span></td>
+        <td class="endpoint">/api/sessions</td>
+        <td>session.get_sessions</td>
+        <td>—</td>
+        <td><span class="req-resp">[{"id":"…","created_at":"…"},…]</span></td>
+        <td>Newest first</td>
+      </tr>
+      <tr>
+        <td><span class="method-delete">DELETE</span></td>
+        <td class="endpoint">/api/sessions/{id}</td>
+        <td>session.delete_session</td>
+        <td>—</td>
+        <td>204 No Content</td>
+        <td>404 if not found; CASCADE deletes messages</td>
+      </tr>
+      <tr>
+        <td><span class="method-post">POST</span></td>
+        <td class="endpoint">/api/sessions/{id}/messages</td>
+        <td>session.send_message</td>
+        <td><span class="req-resp">{"message": "What is ML?"}</span></td>
+        <td><span class="req-resp">{"answer":"…","sources":["ML.txt"]}</span></td>
+        <td>Full tool-calling loop; 404 if session missing</td>
+      </tr>
+      <tr>
+        <td><span class="method-get">GET</span></td>
+        <td class="endpoint">/api/sessions/{id}/messages</td>
+        <td>session.get_messages</td>
+        <td>—</td>
+        <td><span class="req-resp">[{"id","session_id","role","content","created_at"},…]</span></td>
+        <td>All messages oldest first; limit=1000</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- TAB: DATABASE                                             -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div id="database" class="tab-content section">
+    <h2>Database Schema — SQLite (<code>data/chat.db</code>)</h2>
+    <div class="schema">
+      <div class="table-box">
+        <div class="table-header">sessions</div>
+        <div class="table-row"><span class="col-name">id<span class="pk">PK</span></span><span class="col-type">TEXT</span><span class="col-note">UUID v4</span></div>
+        <div class="table-row"><span class="col-name">created_at</span><span class="col-type">TEXT</span><span class="col-note">ISO datetime UTC</span></div>
+      </div>
+      <div style="display:flex;align-items:center;font-size:2rem;color:var(--border)">→</div>
+      <div class="table-box">
+        <div class="table-header">messages</div>
+        <div class="table-row"><span class="col-name">id<span class="pk">PK</span></span><span class="col-type">TEXT</span><span class="col-note">UUID v4</span></div>
+        <div class="table-row"><span class="col-name">session_id<span class="fk">FK</span></span><span class="col-type">TEXT</span><span class="col-note">→ sessions.id ON DELETE CASCADE</span></div>
+        <div class="table-row"><span class="col-name">role</span><span class="col-type">TEXT</span><span class="col-note">"user" or "assistant"</span></div>
+        <div class="table-row"><span class="col-name">content</span><span class="col-type">TEXT</span><span class="col-note">message text</span></div>
+        <div class="table-row"><span class="col-name">created_at</span><span class="col-type">TEXT</span><span class="col-note">ISO datetime UTC</span></div>
+      </div>
+    </div>
+
+    <h2 style="margin-top:2rem">Embedding File Storage</h2>
+    <div class="schema">
+      <div class="table-box">
+        <div class="table-header">data/embeddings/files.json</div>
+        <div class="table-row"><span class="col-name">key</span><span class="col-type">string</span><span class="col-note">"Machine_Learning.txt"</span></div>
+        <div class="table-row"><span class="col-name">value.embedding</span><span class="col-type">float[1536]</span><span class="col-note">mean of all chunk embeddings</span></div>
+      </div>
+      <div class="table-box">
+        <div class="table-header">data/embeddings/chunks/&lt;name&gt;.json</div>
+        <div class="table-row"><span class="col-name">[].text</span><span class="col-type">string</span><span class="col-note">chunk content ≤500 chars</span></div>
+        <div class="table-row"><span class="col-name">[].embedding</span><span class="col-type">float[1536]</span><span class="col-note">chunk-level vector</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- TAB: CONFIG                                               -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <div id="config" class="tab-content section">
+    <h2>All <code>.env</code> Settings</h2>
+    <table class="cfg">
+      <tr><th>Key</th><th>Default</th><th>Description</th></tr>
+      <tr><td>USE_AZURE_OPENAI</td><td>false</td><td>true = Azure DIAL; false = OpenAI public API</td></tr>
+      <tr><td>OPENAI_API_KEY</td><td>—</td><td>OpenAI secret key (USE_AZURE_OPENAI=false)</td></tr>
+      <tr><td>OPENAI_API_URL</td><td>https://api.openai.com/v1</td><td>Base URL for OpenAI-compatible endpoint</td></tr>
+      <tr><td>OPENAI_EMBEDDING_MODEL</td><td>text-embedding-3-small</td><td>OpenAI embedding model name</td></tr>
+      <tr><td>OPENAI_LLM_MODEL</td><td>gpt-4o-mini</td><td>OpenAI chat model</td></tr>
+      <tr><td>AZURE_API_KEY</td><td>—</td><td>Azure / DIAL API key</td></tr>
+      <tr><td>AZURE_ENDPOINT</td><td>https://ai-proxy.lab.epam.com</td><td>DIAL proxy endpoint</td></tr>
+      <tr><td>AZURE_API_VERSION</td><td>2024-02-01</td><td>Azure OpenAI API version</td></tr>
+      <tr><td>AZURE_DEPLOYMENT_NAME</td><td>gpt-4</td><td>Azure chat deployment</td></tr>
+      <tr><td>AZURE_EMBEDDING_MODEL</td><td>text-embedding-3-small-1</td><td>Azure embedding deployment</td></tr>
+      <tr><td>LLM_TEMPERATURE</td><td>0</td><td>0 = deterministic; 0.7 = creative</td></tr>
+      <tr><td>CHUNK_SIZE</td><td>500</td><td>Characters per chunk</td></tr>
+      <tr><td>CHUNK_OVERLAP</td><td>50</td><td>Overlap chars between consecutive chunks</td></tr>
+      <tr><td>HISTORY_LIMIT</td><td>6</td><td>Number of past messages sent as LLM context per turn</td></tr>
+      <tr><td>FORCE_TOOL_USAGE</td><td>true</td><td>true = tool_choice="required"; false = "auto" (LLM decides)</td></tr>
+      <tr><td>SYSTEM_PROMPT</td><td>(built-in)</td><td>Override the default LLM system instruction</td></tr>
+    </table>
+  </div>
+
+</div>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

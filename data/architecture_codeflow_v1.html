@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RAG System — Code Flow Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; padding: 30px 20px; }
+  h1 { text-align: center; font-size: 1.8rem; color: #7dd3fc; margin-bottom: 6px; }
+  .subtitle { text-align: center; color: #64748b; font-size: 0.9rem; margin-bottom: 36px; }
+
+  .split { display: flex; gap: 20px; }
+  .pipeline { flex: 1; }
+
+  h2 { font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; padding: 8px 14px; border-radius: 6px 6px 0 0; margin-bottom: 0; }
+  .h2-ingest { background: #1e3a5f; color: #7dd3fc; }
+  .h2-query  { background: #1a3a2a; color: #6ee7b7; }
+
+  .pipeline-wrap { border: 1px solid #2d3748; border-radius: 0 0 10px 10px; padding: 16px; }
+
+  /* Step card */
+  .step { border-radius: 8px; padding: 14px 16px; margin-bottom: 4px; position: relative; }
+  .step-ingest { background: #0f2236; border-left: 4px solid #3b82f6; }
+  .step-query  { background: #0a1f15; border-left: 4px solid #10b981; }
+  .step-shared { background: #1c1a2e; border-left: 4px solid #a78bfa; }
+
+  .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .step-num { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.75rem; flex-shrink: 0; }
+  .num-ingest { background: #1d4ed8; color: #fff; }
+  .num-query  { background: #059669; color: #fff; }
+  .num-shared { background: #7c3aed; color: #fff; }
+
+  .step-title { font-weight: 700; font-size: 0.95rem; }
+  .title-ingest { color: #93c5fd; }
+  .title-query  { color: #6ee7b7; }
+  .title-shared { color: #c4b5fd; }
+
+  .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; font-weight: 600; margin-left: auto; }
+  .badge-api  { background: #7f1d1d; color: #fca5a5; }
+  .badge-disk { background: #1c3f1c; color: #86efac; }
+  .badge-cpu  { background: #2d2a00; color: #fde68a; }
+  .badge-mem  { background: #1e2d5c; color: #93c5fd; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-top: 4px; }
+  th { background: #1e293b; color: #94a3b8; text-align: left; padding: 5px 8px; font-weight: 600; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em; }
+  td { padding: 5px 8px; border-bottom: 1px solid #1e293b; vertical-align: top; }
+  td:first-child { color: #94a3b8; white-space: nowrap; width: 80px; }
+  td code { background: #1e293b; padding: 1px 5px; border-radius: 3px; font-size: 0.75rem; color: #f9a8d4; }
+  td .lib { background: #1a2e1a; padding: 1px 5px; border-radius: 3px; font-size: 0.72rem; color: #86efac; }
+  td .file { background: #1c1e3a; padding: 1px 5px; border-radius: 3px; font-size: 0.72rem; color: #c4b5fd; }
+
+  /* Arrow between steps */
+  .arrow { text-align: center; color: #475569; font-size: 1.1rem; line-height: 1.2; margin: 2px 0; }
+
+  /* Section arrow between ingestion and shared */
+  .pipe-section { text-align: center; margin: 16px 0 8px; }
+  .pipe-section span { display: inline-block; background: #1e293b; color: #64748b; font-size: 0.72rem; padding: 3px 12px; border-radius: 20px; }
+
+  /* Storage layout */
+  .storage-box { background: #111827; border: 1px solid #2d3748; border-radius: 8px; padding: 12px 14px; margin-top: 20px; }
+  .storage-box h3 { font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+  .storage-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+  .s-icon { font-size: 1rem; margin-top: 1px; }
+  .s-body { font-size: 0.78rem; }
+  .s-path { color: #c4b5fd; font-family: monospace; }
+  .s-desc { color: #64748b; margin-top: 1px; }
+
+  /* Config box */
+  .config-box { background: #111827; border: 1px solid #2d3748; border-radius: 8px; padding: 12px 14px; margin-top: 20px; }
+  .config-box h3 { font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+  .config-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; padding: 4px 0; border-bottom: 1px solid #1e293b; }
+  .config-row:last-child { border-bottom: none; }
+  .config-key { color: #fde68a; font-family: monospace; }
+  .config-val { color: #94a3b8; font-size: 0.72rem; }
+
+  /* Provider box */
+  .provider-row { display: flex; gap: 10px; margin-top: 20px; }
+  .provider { flex: 1; border-radius: 8px; padding: 10px 12px; border: 1px solid; }
+  .provider-openai { background: #0c1a2e; border-color: #1d4ed8; }
+  .provider-azure  { background: #0a1a12; border-color: #059669; }
+  .provider h4 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .provider-openai h4 { color: #60a5fa; }
+  .provider-azure  h4 { color: #34d399; }
+  .provider p { font-size: 0.72rem; color: #64748b; margin-bottom: 3px; }
+  .provider code { font-size: 0.7rem; color: #f9a8d4; background: #1e293b; padding: 1px 4px; border-radius: 3px; }
+  .provider .flag { font-size: 0.68rem; background: #1e293b; color: #94a3b8; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; }
+
+  footer { text-align: center; margin-top: 30px; font-size: 0.72rem; color: #334155; }
+</style>
+</head>
+<body>
+
+<h1>RAG System — Code Flow Architecture</h1>
+<p class="subtitle">Exact methods · Inputs &amp; Outputs · Libraries · Storage</p>
+
+<div class="split">
+
+  <!-- ==================== INGESTION PIPELINE ==================== -->
+  <div class="pipeline">
+    <h2 class="h2-ingest">📥 Ingestion Pipeline</h2>
+    <div class="pipeline-wrap">
+
+      <!-- ROUTE -->
+      <div class="step step-ingest">
+        <div class="step-header">
+          <div class="step-num num-ingest">1</div>
+          <span class="step-title title-ingest">HTTP Route Handler</span>
+          <span class="badge badge-cpu">FastAPI</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/routes/ingest.py</span></td></tr>
+          <tr><td>Method</td><td><code>POST /api/ingest</code> · <code>POST /api/ingest-all</code></td></tr>
+          <tr><td>Input</td><td><code>IngestRequest(file_path: str)</code> or <code>IngestDirectoryRequest(dir_path: str)</code></td></tr>
+          <tr><td>Output</td><td><code>IngestResponse(chunks_processed: int)</code> or <code>IngestDirectoryResponse(...)</code></td></tr>
+          <tr><td>Lib</td><td><span class="lib">fastapi</span> <span class="lib">pydantic v2</span></td></tr>
+          <tr><td>Notes</td><td>Delegates to <code>IngestionService</code>. Raises HTTP 404 on missing file, 400 on bad dir.</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- DOCUMENT READER -->
+      <div class="step step-ingest">
+        <div class="step-header">
+          <div class="step-num num-ingest">2</div>
+          <span class="step-title title-ingest">DocumentReader.read_file()</span>
+          <span class="badge badge-disk">Disk I/O</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/storage/document_reader.py</span></td></tr>
+          <tr><td>Method</td><td><code>read_file(file_path: str) → str</code></td></tr>
+          <tr><td>Input</td><td><code>file_path</code> — absolute or relative path to .txt file</td></tr>
+          <tr><td>Output</td><td><code>str</code> — full raw text content of the file</td></tr>
+          <tr><td>Lib</td><td><span class="lib">os</span> (built-in)</td></tr>
+          <tr><td>Notes</td><td>Opens with <code>encoding='utf-8', errors='replace'</code>. Raises <code>FileNotFoundError</code> if missing.</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- CHUNKING -->
+      <div class="step step-ingest">
+        <div class="step-header">
+          <div class="step-num num-ingest">3</div>
+          <span class="step-title title-ingest">split_into_chunks()</span>
+          <span class="badge badge-cpu">CPU</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/utils/chunking.py</span></td></tr>
+          <tr><td>Method</td><td><code>split_into_chunks(text, chunk_size=None, overlap=None) → list[str]</code></td></tr>
+          <tr><td>Input</td><td><code>str</code> — full document text</td></tr>
+          <tr><td>Output</td><td><code>list[str]</code> — list of overlapping text chunks</td></tr>
+          <tr><td>Lib</td><td>Pure Python</td></tr>
+          <tr><td>Notes</td><td>Sliding window: step = <code>chunk_size - overlap</code>. Defaults: <code>CHUNK_SIZE=500</code>, <code>CHUNK_OVERLAP=50</code> from <code>settings</code>.</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- BATCH EMBEDDING -->
+      <div class="step step-ingest">
+        <div class="step-header">
+          <div class="step-num num-ingest">4</div>
+          <span class="step-title title-ingest">get_embeddings_batch()</span>
+          <span class="badge badge-api">OpenAI API</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/utils/embedding.py</span></td></tr>
+          <tr><td>Method</td><td><code>get_embeddings_batch(texts: list[str]) → list[list[float]]</code></td></tr>
+          <tr><td>Input</td><td><code>list[str]</code> — all text chunks of one file (e.g. 20 chunks)</td></tr>
+          <tr><td>Output</td><td><code>list[list[float]]</code> — list of 1536-dim vectors (one per chunk)</td></tr>
+          <tr><td>Lib</td><td><span class="lib">openai</span> or <span class="lib">openai.AzureOpenAI</span></td></tr>
+          <tr><td>Model</td><td><code>text-embedding-3-small</code> (OpenAI) · <code>text-embedding-3-small-1</code> (DIAL)</td></tr>
+          <tr><td>Notes</td><td>Single API call for ALL chunks — not N calls. Up to 2048 inputs per batch.</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- MEAN EMBEDDING -->
+      <div class="step step-ingest">
+        <div class="step-header">
+          <div class="step-num num-ingest">5</div>
+          <span class="step-title title-ingest">IngestionService._mean_embedding()</span>
+          <span class="badge badge-cpu">NumPy</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/services/ingestion.py</span></td></tr>
+          <tr><td>Method</td><td><code>_mean_embedding(embeddings: list[list[float]]) → list[float]</code></td></tr>
+          <tr><td>Input</td><td><code>list[list[float]]</code> — all chunk embedding vectors</td></tr>
+          <tr><td>Output</td><td><code>list[float]</code> — single 1536-dim file-level vector</td></tr>
+          <tr><td>Lib</td><td><span class="lib">numpy</span> — <code>np.array(embeddings).mean(axis=0).tolist()</code></td></tr>
+          <tr><td>Notes</td><td>File embedding = mean of all chunk embeddings. Represents "overall topic" of file.</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- SAVE TO DISK -->
+      <div class="step step-ingest">
+        <div class="step-header">
+          <div class="step-num num-ingest">6</div>
+          <span class="step-title title-ingest">VectorStore — Save</span>
+          <span class="badge badge-disk">Disk Write</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/storage/vector_store.py</span></td></tr>
+          <tr><td>Methods</td><td>
+            <code>save_chunks(file_name, chunks)</code><br/>
+            <code>save_file_embedding(file_name, embedding)</code>
+          </td></tr>
+          <tr><td>Input</td><td>Chunk dicts: <code>[{text, embedding}, ...]</code> + file-level embedding</td></tr>
+          <tr><td>Output</td><td>Written to disk (no return value)</td></tr>
+          <tr><td>Lib</td><td><span class="lib">json</span> <span class="lib">os</span> (built-in)</td></tr>
+          <tr><td>Writes</td><td>
+            <code>data/embeddings/chunks/&lt;name&gt;.json</code> (chunk embeddings)<br/>
+            <code>data/embeddings/files.json</code> (file-level embedding appended)
+          </td></tr>
+        </table>
+      </div>
+
+    </div><!-- pipeline-wrap -->
+  </div><!-- pipeline ingest -->
+
+
+  <!-- ==================== QUERY PIPELINE ==================== -->
+  <div class="pipeline">
+    <h2 class="h2-query">🔍 Query Pipeline</h2>
+    <div class="pipeline-wrap">
+
+      <!-- ROUTE -->
+      <div class="step step-query">
+        <div class="step-header">
+          <div class="step-num num-query">1</div>
+          <span class="step-title title-query">HTTP Route Handler</span>
+          <span class="badge badge-cpu">FastAPI</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/routes/query.py</span></td></tr>
+          <tr><td>Method</td><td><code>POST /api/query</code></td></tr>
+          <tr><td>Input</td><td><code>QueryRequest(query: str)</code></td></tr>
+          <tr><td>Output</td><td><code>QueryResponse(answer: str, sources: list[str])</code></td></tr>
+          <tr><td>Lib</td><td><span class="lib">fastapi</span> <span class="lib">pydantic v2</span></td></tr>
+          <tr><td>Notes</td><td>Delegates entirely to <code>RetrievalService.retrieve_and_answer()</code>. Total OpenAI calls: <strong>2</strong> (1 embed + 1 chat).</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- EMBED QUERY -->
+      <div class="step step-query">
+        <div class="step-header">
+          <div class="step-num num-query">2</div>
+          <span class="step-title title-query">get_embedding()</span>
+          <span class="badge badge-api">OpenAI API</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/utils/embedding.py</span></td></tr>
+          <tr><td>Method</td><td><code>get_embedding(text: str) → list[float]</code></td></tr>
+          <tr><td>Input</td><td><code>str</code> — user's natural language query</td></tr>
+          <tr><td>Output</td><td><code>list[float]</code> — 1536-dim query vector</td></tr>
+          <tr><td>Lib</td><td><span class="lib">openai</span> — <code>client.embeddings.create()</code></td></tr>
+          <tr><td>Model</td><td><code>text-embedding-3-small</code> (OpenAI) · <code>text-embedding-3-small-1</code> (DIAL)</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- STAGE 1 -->
+      <div class="step step-query">
+        <div class="step-header">
+          <div class="step-num num-query">3</div>
+          <span class="step-title title-query">Stage 1 — _get_top_files()</span>
+          <span class="badge badge-mem">NumPy · In-Memory</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/services/retrieval.py</span></td></tr>
+          <tr><td>Method</td><td><code>_get_top_files(query_embedding, top_k=2) → list[str]</code></td></tr>
+          <tr><td>Input</td><td><code>list[float]</code> — query vector (1536-dim)</td></tr>
+          <tr><td>Output</td><td><code>list[str]</code> — top 2 file names by similarity</td></tr>
+          <tr><td>Reads</td><td><code>data/embeddings/files.json</code> — all file embeddings (preloaded in memory)</td></tr>
+          <tr><td>Lib</td><td><span class="lib">numpy</span></td></tr>
+          <tr><td>Algorithm</td><td>
+            1. Stack file embeddings into matrix <code>(N×1536)</code><br/>
+            2. <code>matrix @ query_vec</code> — batch dot products<br/>
+            3. Divide by norms → cosine similarities<br/>
+            4. <code>np.argpartition</code> O(n) top-k selection
+          </td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- STAGE 2 -->
+      <div class="step step-query">
+        <div class="step-header">
+          <div class="step-num num-query">4</div>
+          <span class="step-title title-query">Stage 2 — _get_top_chunks()</span>
+          <span class="badge badge-disk">Lazy Load</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/services/retrieval.py</span></td></tr>
+          <tr><td>Method</td><td><code>_get_top_chunks(query_embedding, file_names, top_k=5) → list[dict]</code></td></tr>
+          <tr><td>Input</td><td>Query vector + top 2 file names from Stage 1</td></tr>
+          <tr><td>Output</td><td><code>list[dict]</code> — top 5 chunks with <code>{text, file_name, score}</code></td></tr>
+          <tr><td>Reads</td><td><code>data/embeddings/chunks/&lt;name&gt;.json</code> — only for selected 2 files</td></tr>
+          <tr><td>Lib</td><td><span class="lib">numpy</span> (cosine similarity per chunk)</td></tr>
+          <tr><td>Notes</td><td>~40 comparisons (2 files × ~20 chunks). Merged ranking across both files.</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- LLM BUILD PROMPT -->
+      <div class="step step-query">
+        <div class="step-header">
+          <div class="step-num num-query">5</div>
+          <span class="step-title title-query">LLMService._build_messages()</span>
+          <span class="badge badge-cpu">CPU</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/services/llm.py</span></td></tr>
+          <tr><td>Method</td><td><code>_build_messages(query, context_chunks) → list[dict]</code></td></tr>
+          <tr><td>Input</td><td><code>query: str</code> + <code>context_chunks: list[dict]</code></td></tr>
+          <tr><td>Output</td><td>OpenAI messages list: <code>[{role:system,...}, {role:user,...}]</code></td></tr>
+          <tr><td>Lib</td><td>Pure Python</td></tr>
+          <tr><td>Notes</td><td>System prompt: "Answer ONLY from provided context, say I don't know if not found." Each chunk labelled <code>[Source: filename]</code>.</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- LLM GENERATE -->
+      <div class="step step-query">
+        <div class="step-header">
+          <div class="step-num num-query">6</div>
+          <span class="step-title title-query">LLMService.generate_answer()</span>
+          <span class="badge badge-api">OpenAI API</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>File</td><td><span class="file">app/services/llm.py</span></td></tr>
+          <tr><td>Method</td><td><code>generate_answer(query, context_chunks) → str</code></td></tr>
+          <tr><td>Input</td><td>Structured messages list from <code>_build_messages()</code></td></tr>
+          <tr><td>Output</td><td><code>str</code> — LLM-generated answer text</td></tr>
+          <tr><td>Lib</td><td><span class="lib">openai</span> — <code>client.chat.completions.create()</code></td></tr>
+          <tr><td>Model</td><td><code>gpt-4o-mini</code> (OpenAI) · <code>gpt-4</code> (DIAL)</td></tr>
+          <tr><td>Params</td><td><code>temperature=0.0</code> (deterministic, factual)</td></tr>
+        </table>
+      </div>
+      <div class="arrow">↓</div>
+
+      <!-- RESPONSE -->
+      <div class="step step-query">
+        <div class="step-header">
+          <div class="step-num num-query">7</div>
+          <span class="step-title title-query">Response Assembly</span>
+          <span class="badge badge-cpu">FastAPI</span>
+        </div>
+        <table>
+          <tr><th>Item</th><th>Detail</th></tr>
+          <tr><td>Returns</td><td><code>QueryResponse(answer: str, sources: list[str])</code></td></tr>
+          <tr><td>Sources</td><td>Unique file names from top chunks (order-preserving <code>dict.fromkeys</code>)</td></tr>
+          <tr><td>HTTP</td><td><code>200 OK</code> with JSON body</td></tr>
+        </table>
+      </div>
+
+    </div><!-- pipeline-wrap -->
+  </div><!-- pipeline query -->
+</div><!-- split -->
+
+
+<!-- ==================== SHARED MODULES ==================== -->
+<div style="margin-top:20px;">
+  <h2 style="background:#2d1f00; color:#fcd34d; font-size:1rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; padding:8px 14px; border-radius:6px 6px 0 0;">⚙️ Shared Modules (used by both pipelines)</h2>
+  <div style="border:1px solid #2d3748; border-radius:0 0 10px 10px; padding:16px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+
+    <div class="step step-shared">
+      <div class="step-header">
+        <span class="step-title title-shared">config.py · Settings</span>
+      </div>
+      <table>
+        <tr><th>Item</th><th>Detail</th></tr>
+        <tr><td>File</td><td><span class="file">app/config.py</span></td></tr>
+        <tr><td>Loads</td><td><code>.env</code> via <code>load_dotenv(dotenv_path, override=True)</code></td></tr>
+        <tr><td>Provides</td><td><code>settings.openai_api_key</code>, <code>settings.use_azure_openai</code>, <code>settings.chunk_size</code>, <code>settings.llm_temperature</code>, etc.</td></tr>
+        <tr><td>Lib</td><td><span class="lib">python-dotenv</span> <span class="lib">os</span> <span class="lib">pathlib</span></td></tr>
+        <tr><td>Notes</td><td>Always loads <code>.env</code> relative to its own file — path-independent.</td></tr>
+      </table>
+    </div>
+
+    <div class="step step-shared">
+      <div class="step-header">
+        <span class="step-title title-shared">clients/llm_client.py · get_client()</span>
+      </div>
+      <table>
+        <tr><th>Item</th><th>Detail</th></tr>
+        <tr><td>File</td><td><span class="file">app/clients/llm_client.py</span></td></tr>
+        <tr><td>Method</td><td><code>get_client() → OpenAI | AzureOpenAI</code></td></tr>
+        <tr><td>Input</td><td>Reads <code>settings.use_azure_openai</code> flag</td></tr>
+        <tr><td>Output</td><td><code>OpenAI(api_key, base_url)</code> or <code>AzureOpenAI(api_key, endpoint, version)</code></td></tr>
+        <tr><td>Lib</td><td><span class="lib">openai</span></td></tr>
+        <tr><td>Notes</td><td>Initialized once at module import. Raises <code>ValueError</code> if key missing.</td></tr>
+      </table>
+    </div>
+
+    <div class="step step-shared">
+      <div class="step-header">
+        <span class="step-title title-shared">utils/similarity.py · cosine_similarity()</span>
+      </div>
+      <table>
+        <tr><th>Item</th><th>Detail</th></tr>
+        <tr><td>File</td><td><span class="file">app/utils/similarity.py</span></td></tr>
+        <tr><td>Method</td><td><code>cosine_similarity(vec_a, vec_b) → float</code></td></tr>
+        <tr><td>Input</td><td>Two <code>list[float]</code> embedding vectors</td></tr>
+        <tr><td>Output</td><td><code>float</code> — similarity score in [0, 1]</td></tr>
+        <tr><td>Lib</td><td>Pure Python (dot product / norm product)</td></tr>
+        <tr><td>Notes</td><td>Used in Stage 2 chunk ranking. Stage 1 uses vectorized NumPy version directly in retrieval.py.</td></tr>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ==================== STORAGE LAYOUT ==================== -->
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:20px;">
+  <div class="storage-box">
+    <h3>📁 Storage Layout</h3>
+    <div class="storage-item"><span class="s-icon">📄</span><div class="s-body"><div class="s-path">data/embeddings/files.json</div><div class="s-desc">All file-level embeddings. Loaded into memory at startup. Shape: <code>{filename: {embedding: [1536 floats]}}</code></div></div></div>
+    <div class="storage-item"><span class="s-icon">📂</span><div class="s-body"><div class="s-path">data/embeddings/chunks/&lt;name&gt;.json</div><div class="s-desc">Per-file chunk embeddings. Lazily loaded only when file is selected in Stage 1. Shape: <code>[{text, embedding}, ...]</code></div></div></div>
+    <div class="storage-item"><span class="s-icon">📝</span><div class="s-body"><div class="s-path">data/raw/&lt;*.txt&gt;</div><div class="s-desc">Raw knowledge base text files. Input to ingestion pipeline.</div></div></div>
+  </div>
+
+  <div class="config-box">
+    <h3>🔧 Key Configuration (.env)</h3>
+    <div class="config-row"><span class="config-key">USE_AZURE_OPENAI</span><span class="config-val">false=OpenAI · true=Azure DIAL</span></div>
+    <div class="config-row"><span class="config-key">OPENAI_API_KEY</span><span class="config-val">Standard OpenAI key</span></div>
+    <div class="config-row"><span class="config-key">OPENAI_EMBEDDING_MODEL</span><span class="config-val">text-embedding-3-small (1536 dims)</span></div>
+    <div class="config-row"><span class="config-key">OPENAI_LLM_MODEL</span><span class="config-val">gpt-4o-mini</span></div>
+    <div class="config-row"><span class="config-key">AZURE_API_KEY</span><span class="config-val">EPAM DIAL bearer token</span></div>
+    <div class="config-row"><span class="config-key">AZURE_DEPLOYMENT_NAME</span><span class="config-val">gpt-4</span></div>
+    <div class="config-row"><span class="config-key">AZURE_EMBEDDING_MODEL</span><span class="config-val">text-embedding-3-small-1</span></div>
+    <div class="config-row"><span class="config-key">CHUNK_SIZE</span><span class="config-val">500 chars (sliding window size)</span></div>
+    <div class="config-row"><span class="config-key">CHUNK_OVERLAP</span><span class="config-val">50 chars (bridge between chunks)</span></div>
+    <div class="config-row"><span class="config-key">LLM_TEMPERATURE</span><span class="config-val">0.0 (deterministic / factual)</span></div>
+
+    <div class="provider-row">
+      <div class="provider provider-openai">
+        <h4>🔵 OpenAI</h4>
+        <p>Embed: <code>text-embedding-3-small</code></p>
+        <p>LLM: <code>gpt-4o-mini</code></p>
+        <span class="flag">USE_AZURE_OPENAI=false</span>
+      </div>
+      <div class="provider provider-azure">
+        <h4>🟢 Azure DIAL</h4>
+        <p>Embed: <code>text-embedding-3-small-1</code></p>
+        <p>LLM: <code>gpt-4</code></p>
+        <span class="flag">USE_AZURE_OPENAI=true</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>RAG System · FastAPI + OpenAI · No LangChain · No Vector DB · Pure Python</footer>
+</body>
+</html>

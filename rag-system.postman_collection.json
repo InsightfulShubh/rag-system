@@ -1,0 +1,258 @@
+{
+  "info": {
+    "name": "RAG System API",
+    "description": "Complete test flow for the RAG System — ingest, query, sessions, and chat.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "description": "Auto-populated by the Create Session request.",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health",
+            "description": "Verify the server is running."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ingest",
+      "item": [
+        {
+          "name": "Ingest Documents",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/ingest",
+            "description": "Trigger document chunking and embedding. Run this once before querying.",
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"message\": \"Ingested X chunks from Y files\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Query (single-turn)",
+      "item": [
+        {
+          "name": "Ask a Question",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/query",
+            "description": "Single-turn RAG query. No session/history.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What kind of startups does YC fund?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"answer\": \"YC funds early-stage startups across software, biotech, hardware...\",\n  \"sources\": [\"yc_cleaned.csv\"]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sessions",
+      "item": [
+        {
+          "name": "1. Create Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('session_id', json.id);",
+                  "console.log('session_id set to:', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/sessions",
+            "description": "Create a new conversation session. The session_id is saved automatically to the collection variable for subsequent requests."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"id\": \"f725ce69-c439-49c2-adab-37813e848b9e\",\n  \"created_at\": \"2026-04-17T10:30:00.000000\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. List All Sessions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/sessions",
+            "description": "Returns all sessions, newest first."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"id\": \"f725ce69-c439-49c2-adab-37813e848b9e\",\n    \"created_at\": \"2026-04-17T10:30:00.000000\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "3a. Send Message (Turn 1)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/sessions/{{session_id}}/messages",
+            "description": "Send the first user message. LLM will call search_kb if needed, then reply.\n\nFull flow:\n1. User message saved to DB\n2. History loaded (last 6 messages)\n3. LLM called with search_kb tool\n4. LLM fires tool → RAG retrieval runs\n5. Tool result sent back to LLM\n6. LLM generates final answer\n7. Assistant message saved to DB\n8. {answer, sources} returned",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What kind of startups does YC fund?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"answer\": \"YC funds early-stage startups across software, biotech, hardware, and more. They look for strong founders with a clear idea.\",\n  \"sources\": [\"yc_cleaned.csv\"]\n}"
+            }
+          ]
+        },
+        {
+          "name": "3b. Send Message (Turn 2 — follow-up)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/sessions/{{session_id}}/messages",
+            "description": "A follow-up question. The LLM receives the last 6 messages as history, so it understands context from Turn 1.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What is their acceptance rate?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"answer\": \"YC accepts roughly 1-2% of applicants per batch.\",\n  \"sources\": [\"yc_cleaned.csv\"]\n}"
+            }
+          ]
+        },
+        {
+          "name": "3c. Send Message (no KB needed)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/sessions/{{session_id}}/messages",
+            "description": "A general question the LLM can answer from its own knowledge — search_kb tool will NOT be called.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What does the acronym YC stand for?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK (no sources)",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"answer\": \"YC stands for Y Combinator.\",\n  \"sources\": []\n}"
+            }
+          ]
+        },
+        {
+          "name": "4. Get Message History",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/sessions/{{session_id}}/messages",
+            "description": "Fetch the full conversation history for a session (all messages, oldest first)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"id\": 1,\n    \"session_id\": \"f725ce69-c439-49c2-adab-37813e848b9e\",\n    \"role\": \"user\",\n    \"content\": \"What kind of startups does YC fund?\",\n    \"created_at\": \"2026-04-17T10:30:01.000000\"\n  },\n  {\n    \"id\": 2,\n    \"session_id\": \"f725ce69-c439-49c2-adab-37813e848b9e\",\n    \"role\": \"assistant\",\n    \"content\": \"YC funds early-stage startups across software, biotech, hardware...\",\n    \"created_at\": \"2026-04-17T10:30:05.000000\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "5. Delete Session",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/sessions/{{session_id}}",
+            "description": "Delete a session and cascade-delete all its messages."
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "status": "No Content",
+              "code": 204,
+              "body": ""
+            },
+            {
+              "name": "404 Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"detail\": \"Session 'f725ce69-c439-49c2-adab-37813e848b9e' not found\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
