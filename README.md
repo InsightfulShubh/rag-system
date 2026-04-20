@@ -449,7 +449,3 @@ All orchestration is implemented manually using the OpenAI API directly.
 - Hybrid search (BM25 + dense)
 - Streaming responses (`text/event-stream`)
 - Re-ranking with a cross-encoder
-- File hash tracking to skip re-ingestion of unchanged files
-- Authentication on API endpoints
-- Parallel ingestion for large knowledge bases
-- Session expiry / TTL for chat history
