@@ -3,7 +3,7 @@ from app.routes import ingest, query, session
 from app.storage.db import init_db
 
 app = FastAPI(
-    title="RAG System",
+    title="RAG System — Chat Agent v2",
     description=(
         "Simple Retrieval-Augmented Generation API. "
         "Uses two-stage retrieval: file-level cosine similarity to select top 2 files, "
@@ -22,7 +22,7 @@ app.include_router(query.router, prefix="/api")
 app.include_router(session.router, prefix="/api")
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 def health_check():
     """
     Health check endpoint.

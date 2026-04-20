@@ -4,7 +4,7 @@ from app.services.chat_service import ChatService
 from app.models.schemas import MessageRequest, MessageResponse, MessageRecord
 from app.storage import db
 
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter(prefix="/sessions", tags=["Multi-Turn Chat — Sessions & History"])
 session_service = SessionService()
 chat_service = ChatService()
 

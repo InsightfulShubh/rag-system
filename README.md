@@ -272,6 +272,8 @@ docker run -p 8000:8000 \
 
 ## API Endpoints
 
+![Swagger UI](data/swagger.png)
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
