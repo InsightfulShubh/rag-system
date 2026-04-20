@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from app.models.schemas import QueryRequest, QueryResponse
 from app.services.retrieval import RetrievalService
 
-router = APIRouter()
+router = APIRouter(tags=["Single-Turn Query — Testing/Debugging Only"])
 retrieval_service = RetrievalService()
 
 

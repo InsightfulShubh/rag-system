@@ -5,7 +5,7 @@ from app.models.schemas import (
 )
 from app.services.ingestion import IngestionService
 
-router = APIRouter()
+router = APIRouter(tags=["Knowledge Base — Setup & Ingestion"])
 ingestion_service = IngestionService()
 
 
