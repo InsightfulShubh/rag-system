@@ -26,6 +26,23 @@ Given a knowledge base of text files, the system answers user questions by findi
 - **Conversation history** — last N messages (configurable, default 6) passed as context on every turn
 - **OpenAI tool/function calling** — LLM decides when to call `search_kb`; backend executes the retrieval and feeds results back
 - **Force tool usage** — configurable flag to always invoke `search_kb` on every turn (default: `true`)
+- **Grounding guarantee** — `FORCE_TOOL_USAGE=true` prevents the LLM from ever answering from pretrained knowledge alone
+- **Failure-mode aware** — hallucination, token overflow, and redundant tool calls each have explicit mitigations
+
+---
+
+## Grounding Guarantee
+
+To ensure responses are always derived from the knowledge base and avoid hallucination, the system enforces tool usage by default:
+
+- `FORCE_TOOL_USAGE=true` ensures that every query triggers `search_kb` — the LLM cannot skip retrieval
+- The LLM cannot answer purely from its pretrained knowledge
+- All answers are grounded in retrieved context, with source file names included in every response
+- The system prompt additionally instructs the LLM to say **"I don't know"** if the answer is not present in the provided context:
+  - *Use only the provided context to answer*
+  - *If the answer is not found in the context, say "I don't know"*
+
+This is critical for enterprise use cases where accuracy and traceability are required.
 
 ---
 
@@ -99,6 +116,18 @@ Return {answer, sources}
 - File embeddings are loaded into memory at query time for fast Stage 1 retrieval
 - Chunk embeddings are lazily loaded per selected file — only 2 files' chunks loaded per query
 
+### Chat Flow (Tool Calling) — step by step
+
+1. User sends message to `POST /api/sessions/{id}/messages`
+2. Message stored in SQLite (`role=user`)
+3. Last N messages loaded from SQLite as conversation history
+4. LLM called with `search_kb` tool definition and `tool_choice="required"`
+5. LLM fires `search_kb` with a generated query string
+6. Backend runs full two-stage RAG retrieval (no LLM involved)
+7. Retrieved context + source files returned to LLM as a `tool` role message
+8. LLM called again with `tool_choice="none"` — generates final grounded answer
+9. Assistant message stored in SQLite; `{answer, sources}` returned to caller
+
 ---
 
 ## Project Structure
@@ -142,7 +171,6 @@ rag-system/
 ├── .env                           # Local secrets (not committed)
 ├── .env-sample                    # Config template
 ├── requirements.txt               # Direct dependencies only
-└── rag-system.postman_collection.json
 ```
 
 ---
@@ -249,7 +277,7 @@ docker run -p 8000:8000 \
 | `GET` | `/health` | Health check |
 | `POST` | `/api/ingest` | Ingest a single file |
 | `POST` | `/api/ingest-all` | Ingest all files in a directory |
-| `POST` | `/api/query` | Single-turn RAG query |
+| `POST` | `/api/query` | *(Optional)* Single-turn RAG query — for testing/debugging only |
 | `POST` | `/api/sessions` | Create a new chat session |
 | `GET` | `/api/sessions` | List all sessions |
 | `DELETE` | `/api/sessions/{id}` | Delete a session and all its messages |
@@ -349,6 +377,7 @@ Full tool-calling loop on every request:
 | Provider flag in `.env` | Switch between OpenAI and Azure DIAL without any code changes |
 | OpenAI tool/function calling | LLM decides what to search for and when — more flexible than always calling RAG |
 | `force_tool_usage=true` default | Ensures KB is always consulted, preventing LLM from answering purely from training data |
+| Brute-force cosine similarity | Acceptable for small KBs; for large-scale deployments replace with ANN index (FAISS / HNSW) for sub-linear query time |
 | `tool_choice="none"` on second LLM call | After tool result is in context, forces the LLM to write the final answer without looping |
 | SQLite for chat history | Zero infrastructure, built-in to Python stdlib, sufficient for development and small deployments |
 | `HISTORY_LIMIT=6` | Last 6 messages give the LLM enough context for follow-up questions without exceeding token limits |
@@ -371,6 +400,42 @@ Full tool-calling loop on every request:
 | **In-memory file embeddings** | All file embeddings loaded per query | ANN index (FAISS, Hnswlib) for large KBs |
 | **SQLite for chat** | Single-file DB, no ORM | PostgreSQL + async ORM (SQLAlchemy) for multi-instance deployments |
 | **Single `search_kb` tool** | One retrieval tool per turn | Multiple specialised tools (e.g. `search_kb`, `get_file`, `summarise`) |
+
+---
+
+## Failure Modes & Mitigations
+
+| Failure | Mitigation |
+|---------|------------|
+| LLM hallucination | `FORCE_TOOL_USAGE=true` + system prompt grounding — LLM must use retrieved context |
+| Irrelevant retrieval | Two-stage retrieval (file-level then chunk-level cosine filtering) |
+| Token overflow | `HISTORY_LIMIT` caps conversation context; `top_k` caps chunk count |
+| Empty / unanswerable query | LLM system prompt instructs: *"Say 'I don't know' if the answer is not in the context"* |
+| Redundant tool loops | `tool_choice="none"` on the second LLM call forces a text answer, ending the loop |
+
+---
+
+## Why No LangChain?
+
+The system deliberately avoids LangChain and similar frameworks to:
+
+- **Maintain full control** over retrieval logic, prompt construction, and the tool-calling loop
+- **Reduce abstraction overhead** — no hidden prompt templates, no magic chains
+- **Demonstrate core understanding** of RAG internals: embedding, similarity search, tool calling, context management
+- **Fewer dependencies** — the entire stack is 7 direct packages
+
+All orchestration is implemented manually using the OpenAI API directly.
+
+---
+
+## Trade-offs
+
+| Area | Trade-off made | Alternative |
+|------|---------------|-------------|
+| Simplicity vs scalability | JSON files for embeddings — zero infrastructure, but O(n) search | ANN index (FAISS/HNSW) for large KBs |
+| Determinism vs flexibility | `FORCE_TOOL_USAGE=true` always retrieves — predictable but adds one extra API call for trivial queries | `false` lets LLM skip retrieval when not needed |
+| Latency vs accuracy | Two LLM calls per chat turn — accurate and grounded | Single-call approach would be faster but loses tool-calling benefits |
+| Persistence vs performance | SQLite is single-writer — simple but not suitable for concurrent multi-instance deployments | PostgreSQL + async ORM |
 
 ---
 
