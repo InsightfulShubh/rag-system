@@ -1,0 +1,53 @@
+[project]
+name = "rag-system"
+version = "2.0.0"
+description = "Lightweight Retrieval-Augmented Generation API — no LangChain, no vector DB. Pure Python with FastAPI and OpenAI."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "RAG System Team" }
+]
+requires-python = ">=3.11"
+keywords = ["rag", "retrieval-augmented-generation", "openai", "fastapi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core dependencies
+dependencies = [
+    "fastapi==0.135.3",      # Web API framework
+    "uvicorn==0.44.0",       # ASGI server
+    "openai==2.32.0",        # LLM & embeddings API
+    "httpx==0.28.1",         # HTTP transport (used by openai SDK)
+    "numpy==2.4.4",          # Vectorized similarity computation
+    "pydantic==2.13.1",      # Schema validation
+    "python-dotenv==1.2.2",  # .env config loading
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",         # Testing framework
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/rag-system"
+Documentation = "https://github.com/your-org/rag-system#readme"
+Repository = "https://github.com/your-org/rag-system.git"
+Issues = "https://github.com/your-org/rag-system/issues"
+
+[tool.uv]
+package = false  # This is a FastAPI application, not a library — skip wheel build
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"

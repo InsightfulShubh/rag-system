@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from app.routes import ingest, query, session
 from app.storage.db import init_db
 
+
 app = FastAPI(
     title="RAG System — Chat Agent v2",
     description=(
@@ -12,7 +13,7 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# Initialise SQLite tables on startup (no-op if tables already exist)
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -24,9 +25,5 @@ app.include_router(session.router, prefix="/api")
 
 @app.get("/health", tags=["System"])
 def health_check():
-    """
-    Health check endpoint.
-    Returns 200 OK when the server is running.
-    Used by deployment systems to verify the service is alive.
-    """
+    """Returns 200 OK when the server is running."""
     return {"status": "ok"}
