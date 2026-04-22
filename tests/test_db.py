@@ -59,7 +59,8 @@ class TestSessionCrud:
         session = db_mod.create_session()
         assert "id" in session
         assert "created_at" in session
-        assert len(session["id"]) == 36   # UUID4 format
+        assert isinstance(session["id"], int)
+        assert session["id"] > 0
 
     def test_create_session_persists_to_db(self):
         import app.storage.db as db_mod

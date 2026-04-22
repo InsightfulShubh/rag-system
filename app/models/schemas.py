@@ -16,14 +16,14 @@ from pathlib import Path as _Path
 _DEFAULT_RAW_DIR = str(_Path(__file__).resolve().parent.parent / "data" / "raw")
 
 class IngestDirectoryRequest(BaseModel):
-    dir_path: str = _DEFAULT_RAW_DIR   # defaults to <project>/data/raw
+    dir_path: str = _DEFAULT_RAW_DIR
 
 
 class IngestDirectoryResponse(BaseModel):
     files_processed: int
     total_chunks: int
-    results: list[dict]  # [{"file": "report.txt", "chunks": 12}, ...]
-    errors: list[dict]   # [{"file": "bad.txt", "error": "..."}, ...] — files that failed
+    results: list[dict]
+    errors: list[dict]
 
 
 # --- Query ---
@@ -40,17 +40,17 @@ class QueryResponse(BaseModel):
 # --- Chat ---
 
 class MessageRequest(BaseModel):
-    message: str      # the user's message text
+    message: str
 
 
 class MessageResponse(BaseModel):
-    answer: str           # LLM-generated answer
-    sources: list[str]    # source files used to answer (from search_kb)
+    answer: str
+    sources: list[str]
 
 
 class MessageRecord(BaseModel):
-    id: str
-    session_id: str
-    role: str             # 'user' or 'assistant'
+    id: int
+    session_id: int
+    role: str
     content: str
     created_at: str

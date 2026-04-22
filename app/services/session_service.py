@@ -16,7 +16,7 @@ class SessionService:
         """Return all sessions, newest first."""
         return db.get_sessions()
 
-    def delete_session(self, session_id: str) -> bool:
+    def delete_session(self, session_id: int) -> bool:
         """
         Delete a session and all its messages.
         Returns True if deleted, False if session not found.

@@ -1,368 +1,102 @@
-# RAG System — From Scratch (No Frameworks)
+# RAG System
 
-A lightweight **Retrieval-Augmented Generation (RAG)** system built with FastAPI and the OpenAI API — no LangChain, no vector database, no ORM. Pure Python.
-
-Supports both **single-turn queries** and **multi-turn chat sessions** with conversation history, OpenAI function/tool calling, and SQLite-persisted sessions.
+A lightweight RAG API built with FastAPI and the OpenAI API. No LangChain, no vector database, no ORM. Supports single-turn queries and multi-turn chat sessions with tool calling and SQLite-persisted history.
 
 ---
 
 ## Overview
 
-Given a knowledge base of text files, the system answers user questions by finding the most relevant content and generating a grounded answer using an LLM. The design enforces strict context limits: **at most 2 files** may be passed to the LLM at once, making retrieval accuracy critical.
-
----
-
-## Features
-
-- **Two-stage retrieval** — file-level cosine similarity narrows the search, then chunk-level retrieval picks the best passages
-- **No RAG frameworks** — built directly on the OpenAI API
-- **Dual provider support** — works with OpenAI (public) or Azure OpenAI (enterprise), switchable via a single `.env` flag
-- **Batch embeddings** — all chunks of a file embedded in a single API call during ingestion
-- **Numpy-optimised similarity** — matrix multiply + `argpartition` for O(n) top-k selection
-- **Per-file chunk storage** — only the 2 selected files' chunks are loaded per query (memory efficient)
-- **Source attribution** — every answer includes the source file names
-- **Hallucination guard** — system prompt instructs the LLM to say "I don't know" if the answer isn't in the context
-- **Chat sessions** — multi-turn conversations with full history persisted in SQLite
-- **Conversation history** — last N messages (configurable, default 6) passed as context on every turn
-- **OpenAI tool/function calling** — LLM decides when to call `search_kb`; backend executes the retrieval and feeds results back
-- **Force tool usage** — configurable flag to always invoke `search_kb` on every turn (default: `true`)
-- **Grounding guarantee** — `FORCE_TOOL_USAGE=true` prevents the LLM from ever answering from pretrained knowledge alone
-- **Failure-mode aware** — hallucination, token overflow, and redundant tool calls each have explicit mitigations
-
----
-
-## Grounding Guarantee
-
-To ensure responses are always derived from the knowledge base and avoid hallucination, the system enforces tool usage by default:
-
-- `FORCE_TOOL_USAGE=true` ensures that every query triggers `search_kb` — the LLM cannot skip retrieval
-- The LLM cannot answer purely from its pretrained knowledge
-- All answers are grounded in retrieved context, with source file names included in every response
-- The system prompt additionally instructs the LLM to say **"I don't know"** if the answer is not present in the provided context:
-  - *Use only the provided context to answer*
-  - *If the answer is not found in the context, say "I don't know"*
-
-This is critical for enterprise use cases where accuracy and traceability are required.
+Given a directory of `.txt` files, the system answers questions by finding the most relevant content and generating a grounded LLM answer. At most 2 files are passed to the LLM per query — retrieval accuracy is the critical constraint.
 
 ---
 
 ## Architecture
 
-### Single-turn query (`/api/query`)
+**Two-stage retrieval:**
+1. **Stage 1 — File level:** Vectorized cosine similarity (NumPy) across all file embeddings → select top 2 files
+2. **Stage 2 — Chunk level:** Load only those 2 files' chunks → cosine similarity → select top 5 chunks
 
-```
-User question
-  │
-  ▼
-[Embed query]  ──► OpenAI Embeddings API
-  │
-  ▼
-Stage 1 — File-level retrieval
-  Vectorized cosine similarity (NumPy) against all file embeddings
-  → Select top 2 most relevant files
-  │
-  ▼
-Stage 2 — Chunk-level retrieval
-  Load chunks only from the 2 selected files
-  Cosine similarity across ~40 chunks → Select top 5
-  │
-  ▼
-[Build prompt: system grounding + context chunks + user question]
-  │
-  ▼
-[LLM → Answer + Sources]
-```
-
-### Multi-turn chat session (`/api/sessions/{id}/messages`)
-
-```
-User message
-  │
-  ▼
-Save to SQLite  ──────────────────────────────────────────────────┐
-  │                                                               │
-  ▼                                                               │
-Load last 6 messages from SQLite (conversation history)           │
-  │                                                               │
-  ▼                                                               │
-LLM call #1  ──── with search_kb tool definition ────►  LLM      │
-              tool_choice = "required" (FORCE_TOOL_USAGE=true)    │
-                                │                                 │
-                    returns tool_call {query: "..."}              │
-                                │                                 │
-  ◄─────────────── execute_tool_call() ──────────────────────────┘
-  │
-  ▼
-search_kb(query)
-  → get_embedding(query)
-  → Stage 1 (file-level cosine similarity)
-  → Stage 2 (chunk-level cosine similarity)
-  → {context, sources}
-  │
-  ▼
-Feed tool result back as "tool" role message
-  │
-  ▼
-LLM call #2  (tool_choice="none") ──► Final answer text
-  │
-  ▼
-Save assistant message to SQLite
-  │
-  ▼
-Return {answer, sources}
-```
-
-**Memory optimization:**
-- File embeddings are loaded into memory at query time for fast Stage 1 retrieval
-- Chunk embeddings are lazily loaded per selected file — only 2 files' chunks loaded per query
-
-### Chat Flow (Tool Calling) — step by step
-
-1. User sends message to `POST /api/sessions/{id}/messages`
-2. Message stored in SQLite (`role=user`)
-3. Last N messages loaded from SQLite as conversation history
-4. LLM called with `search_kb` tool definition and `tool_choice="required"`
-5. LLM fires `search_kb` with a generated query string
-6. Backend runs full two-stage RAG retrieval (no LLM involved)
-7. Retrieved context + source files returned to LLM as a `tool` role message
-8. LLM called again with `tool_choice="none"` — generates final grounded answer
-9. Assistant message stored in SQLite; `{answer, sources}` returned to caller
+**Multi-turn chat (tool calling):**
+1. Save user message → load last `HISTORY_LIMIT` messages from SQLite
+2. LLM call #1 with `search_kb` tool (`tool_choice="required"`)
+3. Execute retrieval → feed context back as `tool` role message
+4. LLM call #2 (`tool_choice="none"`) → final grounded answer
+5. Save assistant message → return `{answer, sources}`
 
 ---
 
-## Project Structure
+## Grounding Guarantee
 
-```
-rag-system/
-├── app/
-│   ├── main.py                    # FastAPI app entry point, DB init on startup
-│   ├── config.py                  # All settings loaded from .env
-│   ├── clients/
-│   │   └── llm_client.py          # Client factory (OpenAI / Azure OpenAI)
-│   ├── models/
-│   │   └── schemas.py             # Pydantic request/response schemas
-│   ├── utils/
-│   │   ├── similarity.py          # Cosine similarity helper
-│   │   ├── chunking.py            # Sliding window text chunker
-│   │   └── embedding.py           # OpenAI embedding wrappers (single + batch)
-│   ├── storage/
-│   │   ├── document_reader.py     # Read raw .txt files from disk
-│   │   ├── vector_store.py        # Load/save embeddings as JSON (absolute paths)
-│   │   └── db.py                  # SQLite: sessions + messages (chat history)
-│   ├── services/
-│   │   ├── ingestion.py           # Ingestion pipeline orchestrator
-│   │   ├── retrieval.py           # Two-stage retrieval + search() for tool use
-│   │   ├── llm.py                 # LLM prompt building + chat completion
-│   │   ├── tools.py               # OpenAI tool spec + execute_tool_call()
-│   │   ├── session_service.py     # Session CRUD (create/list/delete)
-│   │   └── chat_service.py        # Full tool-calling chat loop
-│   └── routes/
-│       ├── ingest.py              # POST /api/ingest, /api/ingest-all
-│       ├── query.py               # POST /api/query  (single-turn)
-│       └── session.py             # /api/sessions + /{id}/messages (chat)
-├── data/
-│   ├── raw/                       # Knowledge base .txt files (input)
-│   ├── chat.db                    # SQLite database (sessions + messages)
-│   └── embeddings/
-│       ├── files.json             # All file-level embeddings
-│       └── chunks/<name>.json     # Per-file chunk embeddings (lazy-loaded)
-├── Dockerfile                     # Multi-stage production build
-├── .dockerignore
-├── .env                           # Local secrets (not committed)
-├── .env-sample                    # Config template
-├── requirements.txt               # Direct dependencies only
-```
+All responses are grounded in the knowledge base:
+
+- `FORCE_TOOL_USAGE=true` ensures the LLM always calls `search_kb`
+- The model is forced to use retrieved context, significantly reducing reliance on pretrained knowledge
+- If relevant context is not found, the model is instructed to return "I don't know"
+
+This prevents hallucination and ensures traceability of answers.
 
 ---
 
-## Setup
+## How to Run
 
-### 1. Clone and create virtual environment
+**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/)
 
 ```bash
 git clone <repo-url>
 cd rag-system
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # macOS/Linux
-pip install -r requirements.txt
+uv sync                  # create venv + install deps
+cp .env-sample .env      # fill in API key
 ```
 
-### 2. Configure environment
-
-Copy `.env-sample` to `.env` and fill in credentials:
-
+**Start the server:**
 ```bash
-cp .env-sample .env
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-```env
-# ── Provider ─────────────────────────────────────────────────
-# false = OpenAI (default), true = Azure OpenAI (DIAL)
-USE_AZURE_OPENAI=false
+Swagger UI: http://localhost:8000/docs
 
-# ── OpenAI (used when USE_AZURE_OPENAI=false) ─────────────────
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_API_URL=https://api.openai.com/v1
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-OPENAI_LLM_MODEL=gpt-4o-mini
-
-# ── Azure OpenAI / DIAL (used when USE_AZURE_OPENAI=true) ─────
-AZURE_API_KEY=your-azure-dial-key
-AZURE_ENDPOINT=https://ai-****.**.***.com
-AZURE_API_VERSION=2024-02-01
-AZURE_DEPLOYMENT_NAME=gpt-4
-AZURE_EMBEDDING_MODEL=text-embedding-3-small-1
-
-# ── LLM settings ─────────────────────────────────────────────
-LLM_TEMPERATURE=0          # 0 = deterministic (recommended for RAG)
-
-# ── Chunking ──────────────────────────────────────────────────
-CHUNK_SIZE=500
-CHUNK_OVERLAP=50
-
-# ── Chat agent ────────────────────────────────────────────────
-HISTORY_LIMIT=6            # messages passed as context to LLM per turn
-FORCE_TOOL_USAGE=true      # true = always call search_kb; false = LLM decides
-# SYSTEM_PROMPT=...        # optional override of the default system prompt
-```
-
-> **Note:** For local development, the public OpenAI API was used. For internal evaluation, the organisation-provided **Azure OpenAI (DIAL)** endpoint was used — switchable with no code changes.
-
-### 3. Add knowledge base files
-
-Place `.txt` files in `data/raw/`.
-
-### 4. Start the server
-
+**Ingest documents (first run):**
 ```bash
-.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-Open **http://localhost:8000/docs** for the interactive Swagger UI.
-
-### 5. Ingest documents (first run only)
-
-```bash
-# Ingest all files in data/raw/ in one call
+# Place .txt files in data/raw/, then:
 curl -X POST http://localhost:8000/api/ingest-all
 ```
 
-After ingestion, `data/embeddings/files.json` and `data/embeddings/chunks/` will be populated.
-
----
-
-## Docker
-
+**Run tests:**
 ```bash
-# Build
-docker build -t rag-system:latest .
+uv sync --all-extras     # install pytest
+uv run pytest
+```
+**Note:** Tests use real LLM calls configured via environment variables. No mock responses are used, as per task requirements.
 
-# Run (pass secrets as env vars — never bake .env into the image)
-docker run -p 8000:8000 \
-  -e USE_AZURE_OPENAI=true \
-  -e AZURE_API_KEY=your_key \
-  -e AZURE_ENDPOINT=https://*******.**.****.com \
-  -e AZURE_DEPLOYMENT_NAME=gpt-4 \
-  -e AZURE_EMBEDDING_MODEL=text-embedding-3-small-1 \
-  rag-system:latest
+**Docker:**
+```bash
+docker build -t rag-system:latest .
+docker run -p 8000:8000 -e OPENAI_API_KEY=your_key rag-system:latest
 ```
 
 ---
 
-## API Endpoints
-
-![Swagger UI](data/swagger.png)
+## API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
 | `POST` | `/api/ingest` | Ingest a single file |
-| `POST` | `/api/ingest-all` | Ingest all files in a directory |
-| `POST` | `/api/query` | *(Optional)* Single-turn RAG query — for testing/debugging only |
-| `POST` | `/api/sessions` | Create a new chat session |
-| `GET` | `/api/sessions` | List all sessions |
-| `DELETE` | `/api/sessions/{id}` | Delete a session and all its messages |
-| `POST` | `/api/sessions/{id}/messages` | Send a message and get a reply (multi-turn chat) |
-| `GET` | `/api/sessions/{id}/messages` | Get full conversation history |
+| `POST` | `/api/ingest-all` | Ingest all files in `data/raw/` |
+| `POST` | `/api/query` | (Optional) Single-turn query for debugging; main interface is session-based |
+| `POST` | `/api/sessions` | Create a chat session |
+| `GET` | `/api/sessions` | List sessions |
+| `DELETE` | `/api/sessions/{id}` | Delete session and messages |
+| `POST` | `/api/sessions/{id}/messages` | Send a message, get a reply |
+| `GET` | `/api/sessions/{id}/messages` | Get conversation history |
 
-### POST `/api/ingest`
-```json
-{ "file_path": "data/raw/FastAPI_Framework.txt" }
+**Key env vars** (see `.env-sample` for full list):
+```env
+USE_AZURE_OPENAI=false        # true to use Azure DIAL instead
+OPENAI_API_KEY=...
+FORCE_TOOL_USAGE=true         # always call search_kb (recommended)
+HISTORY_LIMIT=6               # messages passed as LLM context per turn
 ```
-
-### POST `/api/ingest-all`
-```json
-{}
-```
-> Body is optional — defaults to `data/raw/`. Pass `{"dir_path": "/custom/path"}` to override.
-
-### POST `/api/query` — single-turn
-```json
-{ "query": "What is the difference between supervised and unsupervised learning?" }
-```
-**Response:**
-```json
-{
-  "answer": "Supervised learning involves training on labeled data... Unsupervised learning identifies patterns in unlabeled data...",
-  "sources": ["Machine_Learning.txt", "Deep_Learning.txt"]
-}
-```
-
-### POST `/api/sessions` — create session
-**Response (201):**
-```json
-{ "id": "f725ce69-c439-49c2-adab-37813e848b9e", "created_at": "2026-04-17T10:30:00" }
-```
-
-### POST `/api/sessions/{id}/messages` — chat turn
-
-Full tool-calling loop on every request:
-1. User message saved to SQLite
-2. Last `HISTORY_LIMIT` messages loaded as context
-3. LLM called with `search_kb` tool
-4. LLM fires tool → two-stage RAG retrieval runs
-5. Tool result (context + sources) fed back to LLM
-6. LLM generates grounded answer
-7. Assistant message saved to SQLite
-
-```json
-{ "message": "What is supervised learning?" }
-```
-**Response:**
-```json
-{
-  "answer": "Supervised learning uses labeled data to train a model to predict outputs...",
-  "sources": ["Machine_Learning.txt"]
-}
-```
-
-### GET `/api/sessions/{id}/messages` — conversation history
-```json
-[
-  { "id": 1, "session_id": "...", "role": "user",      "content": "What is supervised learning?", "created_at": "..." },
-  { "id": 2, "session_id": "...", "role": "assistant", "content": "Supervised learning uses...",   "created_at": "..." }
-]
-```
-
-> **Why POST for `/query`?** GET parameters have URL length limits and get cached. POST allows clean JSON bodies of any size and prevents caching of expensive LLM calls.
-
----
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| API framework | FastAPI + Uvicorn |
-| LLM & Embeddings | OpenAI API (`gpt-4o-mini`, `text-embedding-3-small`) |
-| Enterprise LLM | Azure OpenAI / DIAL (`gpt-4`, `text-embedding-3-small-1`) |
-| Tool/function calling | OpenAI function calling (chat completions) |
-| Vector similarity | NumPy (cosine similarity, matrix multiply) |
-| Chat persistence | SQLite (`sqlite3` stdlib, no ORM) |
-| Embedding storage | JSON files (no vector database) |
-| Config | python-dotenv |
-| Validation | Pydantic v2 |
-| Containerisation | Docker (multi-stage build, non-root user) |
 
 ---
 
@@ -370,82 +104,70 @@ Full tool-calling loop on every request:
 
 | Decision | Rationale |
 |----------|-----------|
-| Two-stage retrieval | Satisfies the "max 2 files in context" constraint efficiently — O(n) file search then O(k) chunk search |
-| Per-file chunk JSON | Only load chunks for selected files, not the entire KB |
-| Batch embeddings | One API call per file during ingestion instead of N calls per chunk |
+| Two-stage retrieval | File-level similarity narrows search space to 2 files, then chunk-level retrieval selects the most relevant passages |
+| JSON embedding storage | No external infra; read-heavy workload at this scale; one file per doc for lazy loading |
 | `np.argpartition` | O(n) top-k selection vs O(n log n) full sort |
 | No vector database | Self-contained, zero infrastructure dependencies |
-| Absolute paths in `vector_store.py` | Works correctly regardless of which directory uvicorn is launched from |
-| Provider flag in `.env` | Switch between OpenAI and Azure DIAL without any code changes |
-| OpenAI tool/function calling | LLM decides what to search for and when — more flexible than always calling RAG |
-| `force_tool_usage=true` default | Ensures KB is always consulted, preventing LLM from answering purely from training data |
-| Brute-force cosine similarity | Acceptable for small KBs; for large-scale deployments replace with ANN index (FAISS / HNSW) for sub-linear query time |
-| `tool_choice="none"` on second LLM call | After tool result is in context, forces the LLM to write the final answer without looping |
-| SQLite for chat history | Zero infrastructure, built-in to Python stdlib, sufficient for development and small deployments |
-| `HISTORY_LIMIT=6` | Last 6 messages give the LLM enough context for follow-up questions without exceeding token limits |
-| Multi-stage Docker build | Compiler (`gcc`) used to build packages stays in builder stage only — smaller final image |
-| Non-root Docker user | OWASP security best practice — process has no write access outside `/app` |
+| `FORCE_TOOL_USAGE=true` | Ensures KB is consulted for every query, improving grounding and reducing reliance on pretrained knowledge |
+| `tool_choice="none"` (2nd call) | Forces a text answer after tool result is in context, ending the loop |
+| SQLite + `INTEGER AUTOINCREMENT` | Zero infrastructure, stdlib only; AUTOINCREMENT gives clean integer session IDs |
+| Absolute paths in `vector_store.py` | Works from any working directory uvicorn is launched from |
+| Provider flag in `.env` | Switch OpenAI ↔ Azure DIAL with no code changes |
+| No LangChain | Full control over retrieval logic, prompt construction, and tool loop; 7 direct dependencies total |
 
 ---
 
-## Assumptions & Simplifications
+## Why JSON for Embeddings?
 
-| Area | What was done | Production alternative |
-|------|--------------|------------------------|
-| **Embedding storage** | Plain JSON files | Binary formats (pickle, numpy `.npy`, FAISS index) — faster, more compact |
-| **File-level embedding** | Mean of all chunk embeddings | LLM-generated file summary embedding — better semantic representation |
-| **Chunk strategy** | Fixed-size sliding window (character-based) | Sentence/paragraph-aware chunking for more coherent chunks |
-| **Top-k values** | `top_k=2` files, `top_k=5` chunks (defaults) | Configurable per-query or tuned via evaluation |
-| **No re-ingestion check** | Re-ingesting a file silently overwrites | Track file hashes; skip unchanged files, detect deletions |
-| **No authentication** | All endpoints are open | API key header or OAuth2 for any shared/deployed instance |
-| **Sequential ingestion** | Files ingested one by one | Parallel ingestion with `asyncio` or `ThreadPoolExecutor` |
-| **In-memory file embeddings** | All file embeddings loaded per query | ANN index (FAISS, Hnswlib) for large KBs |
-| **SQLite for chat** | Single-file DB, no ORM | PostgreSQL + async ORM (SQLAlchemy) for multi-instance deployments |
-| **Single `search_kb` tool** | One retrieval tool per turn | Multiple specialised tools (e.g. `search_kb`, `get_file`, `summarise`) |
+Embeddings are stored as JSON files to keep the system simple and self-contained:
+
+- No external infrastructure required
+- Read-heavy workload suits file-based storage
+- Enables lazy loading (only selected files are loaded per query)
+
+For production-scale systems, binary formats or vector indexes would be preferred.
 
 ---
 
-## Failure Modes & Mitigations
+## Evaluation (Optional)
 
-| Failure | Mitigation |
-|---------|------------|
-| LLM hallucination | `FORCE_TOOL_USAGE=true` + system prompt grounding — LLM must use retrieved context |
-| Irrelevant retrieval | Two-stage retrieval (file-level then chunk-level cosine filtering) |
-| Token overflow | `HISTORY_LIMIT` caps conversation context; `top_k` caps chunk count |
-| Empty / unanswerable query | LLM system prompt instructs: *"Say 'I don't know' if the answer is not in the context"* |
-| Redundant tool loops | `tool_choice="none"` on the second LLM call forces a text answer, ending the loop |
+Retrieval quality can be evaluated using metrics like  precision and llm as judge validation of LLM responses.
 
 ---
 
-## Why No LangChain?
+## Limitations
 
-The system deliberately avoids LangChain and similar frameworks to:
+- Brute-force similarity search does not scale to very large datasets
+- JSON-based embedding storage is not optimal for high-volume systems
+- Retrieval quality depends on chunking strategy and embedding model performance
 
-- **Maintain full control** over retrieval logic, prompt construction, and the tool-calling loop
-- **Reduce abstraction overhead** — no hidden prompt templates, no magic chains
-- **Demonstrate core understanding** of RAG internals: embedding, similarity search, tool calling, context management
-- **Fewer dependencies** — the entire stack is 7 direct packages
-
-All orchestration is implemented manually using the OpenAI API directly.
+For large-scale systems, this can be improved using ANN indexes (e.g., FAISS) or vector databases.
 
 ---
 
-## Trade-offs
-
-| Area | Trade-off made | Alternative |
-|------|---------------|-------------|
-| Simplicity vs scalability | JSON files for embeddings — zero infrastructure, but O(n) search | ANN index (FAISS/HNSW) for large KBs |
-| Determinism vs flexibility | `FORCE_TOOL_USAGE=true` always retrieves — predictable but adds one extra API call for trivial queries | `false` lets LLM skip retrieval when not needed |
-| Latency vs accuracy | Two LLM calls per chat turn — accurate and grounded | Single-call approach would be faster but loses tool-calling benefits |
-| Persistence vs performance | SQLite is single-writer — simple but not suitable for concurrent multi-instance deployments | PostgreSQL + async ORM |
+## Scaling Path
+This ensures the system remains modular and can evolve without major architectural changes.
+For large knowledge bases, the retrieval layer can be replaced with a vector index (e.g., FAISS) or a vector database without changing the API or overall architecture.
 
 ---
+
+## Constraints Followed
+
+- Max 2 files passed as context to LLM per query
+- No RAG frameworks (no LangChain, LlamaIndex, etc.)
+- No vector database (ChromaDB, Pinecone, etc.)
+- No vector index libraries (e.g., FAISS)
+- No ORM (raw `sqlite3` only)
+- Grounded answers only — `FORCE_TOOL_USAGE=true` + system prompt instructs LLM to say "I don't know" if answer is not in context
+- Non-root Docker user (OWASP best practice)
+
+---
+
 
 ## Future Improvements
 
-- Evaluation framework (precision, LLM-as-judge metrics)
-- Pluggable vector store (FAISS, ChromaDB)
-- LLM-based file summarization for better file-level embeddings
-- Hybrid search (BM25 + dense)
-- Streaming responses (`text/event-stream`)
-- Re-ranking with a cross-encoder
+- Replace brute-force similarity with an ANN index (e.g., FAISS) for large-scale retrieval
+- Move from JSON embedding storage to a vector database (e.g., ChromaDB or Postgres + pgvector) for persistence and filtering
+- Introduce hybrid search (keyword + semantic) to improve retrieval accuracy
+- Add result re-ranking (cross-encoder) for higher answer quality
+- Cache frequent queries and embeddings to reduce latency
