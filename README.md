@@ -14,7 +14,7 @@ Given a directory of `.txt` files, the system answers questions by finding the m
 
 **Two-stage retrieval:**
 1. **Stage 1 — File level:** Vectorized cosine similarity (NumPy) across all file embeddings → select top 2 files
-2. **Stage 2 — Chunk level:** Load only those 2 files' chunks → cosine similarity → select top 5 chunks
+2. **Stage 2 — Chunk level:**  Load only those 2 files' chunks → cosine similarity → select top 5 chunks
 
 **Multi-turn chat (tool calling):**
 1. Save user message → load last `HISTORY_LIMIT` messages from SQLite
